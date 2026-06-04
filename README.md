@@ -18,6 +18,10 @@ Shopify QA browser automation: trigger regression tests from Slack, run headed C
 
 Valid apps: `bestsellerssort`, `stockiq`, `mssp`, `commetiq`
 
+**Repository:** https://github.com/vishalegnition/egnition-qa-runner
+
+See [SETUP_STATUS.md](SETUP_STATUS.md) for automated setup progress and remaining one-time steps.
+
 ## Setup
 
 ### 1. GitHub repository secrets
