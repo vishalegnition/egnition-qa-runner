@@ -1,0 +1,22 @@
+{
+  "bestsellerssort": {
+    "name": "BestSellers reSort",
+    "store_url": "https://br-dev.myshopify.com",
+    "jira_project_key": "BR"
+  },
+  "stockiq": {
+    "name": "StockIQ",
+    "store_url": "https://stockiq-dev.myshopify.com",
+    "jira_project_key": "SIQ"
+  },
+  "mssp": {
+    "name": "Multi-Store Sync Power",
+    "store_url": "https://mssp-dev.myshopify.com",
+    "jira_project_key": "MSSP"
+  },
+  "commetiq": {
+    "name": "Commetiq",
+    "store_url": "https://commetiq-dev.myshopify.com",
+    "jira_project_key": "CMQ"
+  }
+}
