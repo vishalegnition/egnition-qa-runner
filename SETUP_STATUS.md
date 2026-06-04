@@ -24,7 +24,7 @@ cd "d:\QA Automation Testing"
 .\scripts\push-workflow.ps1
 ```
 
-Device login code was issued earlier if refresh is still pending: run `gh auth refresh` and complete https://github.com/login/device
+A prior `gh auth refresh` attempt failed (device code expired). Run refresh again and complete login within 15 minutes.
 
 ### 2. Railway webhook deploy
 
