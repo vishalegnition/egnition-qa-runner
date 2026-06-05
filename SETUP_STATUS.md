@@ -23,17 +23,10 @@ No `.env` file and no secrets configured in the repo yet. Required before any te
 
 ### 2. Railway webhook deploy
 
-`railway` CLI is not logged in on this machine.
-
-```powershell
-railway login
-cd "d:\QA Automation Testing"
-railway init
-railway up
-railway variables set SLACK_SIGNING_SECRET=... GITHUB_TOKEN=... GITHUB_REPO_OWNER=vishalegnition GITHUB_REPO_NAME=egnition-qa-runner
-```
-
-Set Slack slash command URL to: `https://<railway-domain>/trigger`
+- [x] Deployed to **https://qa-automation-production-9b20.up.railway.app**
+- [x] `GITHUB_REPO_OWNER`, `GITHUB_REPO_NAME`, `GITHUB_TOKEN` set on Railway
+- [ ] `SLACK_SIGNING_SECRET` — still required on Railway
+- [ ] Slack slash command URL → `https://qa-automation-production-9b20.up.railway.app/trigger`
 
 ### 3. GitHub Actions secrets
 
