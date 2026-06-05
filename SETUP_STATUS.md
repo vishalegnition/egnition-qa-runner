@@ -10,21 +10,16 @@
 - [x] GitHub repo created: **https://github.com/vishalegnition/egnition-qa-runner**
 - [x] Application code pushed to `main`
 
-## Blocked (needs one browser step on your machine)
+## Completed on GitHub
 
-### 1. GitHub Actions workflow file
+- [x] GitHub Actions workflow pushed — **Run QA Browser Tests** is active
+- [x] `workflow` scope granted on `vishalegnition` account
 
-The `vishalegnition` GitHub OAuth token has `repo` but not `workflow` scope, so `.github/workflows/run-tests.yml` cannot be pushed yet.
+## Still needed
 
-**Fix (once, ~30 seconds):**
+### 1. GitHub Actions secrets (no values on this machine)
 
-```powershell
-gh auth refresh -h github.com -s repo,workflow
-cd "d:\QA Automation Testing"
-.\scripts\push-workflow.ps1
-```
-
-A prior `gh auth refresh` attempt failed (device code expired). Run refresh again and complete login within 15 minutes.
+No `.env` file and no secrets configured in the repo yet. Required before any test run.
 
 ### 2. Railway webhook deploy
 
