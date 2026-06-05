@@ -17,9 +17,20 @@
 
 ## Still needed
 
-### 1. GitHub Actions secrets (no values on this machine)
+### 1. GitHub Actions secrets
 
-No `.env` file and no secrets configured in the repo yet. Required before any test run.
+**Set on GitHub (auto):**
+- [x] `OPENROUTER_MODEL` → `google/gemini-2.0-flash-exp`
+- [x] `ZEPHYR_BASE_URL` → `https://egnition.atlassian.net`
+
+**You still need to add in GitHub → Settings → Secrets → Actions:**
+- [ ] `SHOPIFY_ADMIN_EMAIL`
+- [ ] `SHOPIFY_ADMIN_PASSWORD`
+- [ ] `ZEPHYR_API_TOKEN`
+- [ ] `ZEPHYR_PROJECT_KEY`
+- [ ] `OPENROUTER_API_KEY`
+- [ ] `SLACK_BOT_TOKEN`
+- [ ] `SLACK_CHANNEL_ID`
 
 ### 2. Railway webhook deploy
 
