@@ -97,6 +97,13 @@ async function waitPastCloudflare(page, label = 'page') {
     }
 
     if (await isCloudflarePage(page)) {
+      if (process.env.AUTH_RUN_ID && Date.now() - start > 12000) {
+        throw new Error(
+          'Cloudflare blocked GitHub Actions — it runs from a different IP than your Slack login, so the saved session cannot pass Cloudflare again. ' +
+            'Re-run /run-tests in Slack (tests now run on the QA server after login). ' +
+            'Or add CAPSOLVER_API_KEY to GitHub secrets for datacenter runs.'
+        );
+      }
       if (!capsolverTried && process.env.CAPSOLVER_API_KEY) {
         capsolverTried = true;
         console.log(`Cloudflare detected on ${label} — trying CapSolver...`);
@@ -197,7 +204,7 @@ async function handleTwoFactor(page) {
     .click();
 }
 
-async function openStoreAdmin(page, storeUrl) {
+async function openStoreAdmin(page, storeUrl, { trustSession = false } = {}) {
   const handle = storeHandleFromUrl(storeUrl);
   const target = handle
     ? `https://admin.shopify.com/store/${handle}`
@@ -206,6 +213,19 @@ async function openStoreAdmin(page, storeUrl) {
       : `${storeUrl.replace(/\/$/, '')}/admin`;
 
   await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 90000 });
+
+  if (trustSession) {
+    for (let i = 0; i < 8; i++) {
+      if (await isAdminReady(page)) {
+        console.log('Admin ready with saved session');
+        return;
+      }
+      if (await isLoginReady(page)) break;
+      await page.waitForTimeout(2000);
+    }
+    if (await isAdminReady(page)) return;
+  }
+
   await waitPastCloudflare(page, 'admin');
 }
 
@@ -242,7 +262,9 @@ async function loginWithCredentials(page, email, password) {
 }
 
 export async function loginToShopify(page, storeUrl, { hasStorageState = false } = {}) {
-  await openStoreAdmin(page, storeUrl);
+  const trustSession = process.env.RAILWAY_LOCAL_SESSION === '1';
+
+  await openStoreAdmin(page, storeUrl, { trustSession });
 
   if (await isAdminReady(page)) return;
 

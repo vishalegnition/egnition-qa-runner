@@ -19,6 +19,7 @@ import {
   stopAuthBrowser,
   solveAuthCloudflare,
 } from './auth-browser.js';
+import { runCycleLocally } from './run-cycle-local.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -235,18 +236,31 @@ export function registerAuthRoutes(app, { triggerWorkflow }) {
       storeSession(req.params.runId, storageStateBase64);
       updatePendingRun(req.params.runId, { status: 'running' });
 
-      await triggerWorkflow({
-        app: run.app,
-        cycleId: run.cycleId,
-        authRunId: req.params.runId,
-      });
-
-      await notifySlack(
-        `✓ Shopify login complete for \`${run.app}\` cycle \`${run.cycleId}\`. Tests are running…`,
-        run.slackChannel
-      );
-
       await stopAuthBrowser(req.params.runId);
+
+      // Run on Railway (same IP as login). GHA datacenter IPs re-trigger Cloudflare.
+      const useGha = process.env.RUN_TESTS_ON_GHA === 'true';
+      if (useGha) {
+        await triggerWorkflow({
+          app: run.app,
+          cycleId: run.cycleId,
+          authRunId: req.params.runId,
+        });
+        await notifySlack(
+          `✓ Shopify login saved for \`${run.app}\` cycle \`${run.cycleId}\`. Tests starting on GitHub Actions…`,
+          run.slackChannel
+        );
+      } else {
+        runCycleLocally({
+          app: run.app,
+          cycleId: run.cycleId,
+          storageStateBase64,
+        });
+        await notifySlack(
+          `✓ Shopify login complete for \`${run.app}\` cycle \`${run.cycleId}\`. Tests are running on the QA server…`,
+          run.slackChannel
+        );
+      }
 
       res.json({ ready: true, started: true });
     } catch (err) {
