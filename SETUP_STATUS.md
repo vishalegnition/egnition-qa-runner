@@ -1,53 +1,29 @@
-# Setup status (auto-generated)
+# Setup status
 
-## Completed locally
+## Complete
 
-- [x] Full codebase implemented per spec
-- [x] `npm install` + Playwright Chromium installed
-- [x] `npm run verify` — all checks pass
-- [x] Browser smoke test (`node scripts/smoke-browser.js`)
-- [x] Git repo initialized, committed on `main`
-- [x] GitHub repo created: **https://github.com/vishalegnition/egnition-qa-runner**
-- [x] Application code pushed to `main`
+- [x] Codebase + GitHub repo: https://github.com/vishalegnition/egnition-qa-runner
+- [x] GitHub Actions workflow: **Run QA Browser Tests**
+- [x] Railway webhook: https://qa-automation-production-9b20.up.railway.app
+- [x] App codes: `br`, `oosp`, `mssp`, `ol`
+- [x] GitHub Actions secrets (all 8):
+  - `SHOPIFY_ADMIN_EMAIL`, `SHOPIFY_ADMIN_PASSWORD`, `SHOPIFY_2FA_SECRET`
+  - `ZEPHYR_BASE_URL`, `ZEPHYR_API_TOKEN`
+  - `OPENROUTER_API_KEY`
+  - `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`
+- [x] Railway variables: `SLACK_SIGNING_SECRET`, `GITHUB_*`
 
-## Completed on GitHub
+## First test
 
-- [x] GitHub Actions workflow pushed — **Run QA Browser Tests** is active
-- [x] `workflow` scope granted on `vishalegnition` account
-
-## Still needed
-
-### 1. GitHub Actions secrets
-
-**Set on GitHub (auto):**
-- [x] `ZEPHYR_BASE_URL` → `https://egnition.atlassian.net`
-
-**No longer required:** `OPENROUTER_MODEL` — best Gemini vision model is auto-selected at runtime.
-
-**You still need to add in GitHub → Settings → Secrets → Actions:**
-- [ ] `SHOPIFY_ADMIN_EMAIL`
-- [ ] `SHOPIFY_ADMIN_PASSWORD`
-- [ ] `SHOPIFY_2FA_SECRET` (TOTP secret — not a one-time code)
-- [ ] `ZEPHYR_API_TOKEN`
-- [ ] `OPENROUTER_API_KEY`
-- [ ] `SLACK_BOT_TOKEN` (scopes: `chat:write`, `files:write`, `channels:read`, `groups:read`)
-- [ ] `SLACK_CHANNEL_ID`
-
-### 2. Railway webhook deploy
-
-- [x] Deployed to **https://qa-automation-production-9b20.up.railway.app**
-- [x] `GITHUB_REPO_OWNER`, `GITHUB_REPO_NAME`, `GITHUB_TOKEN` set on Railway
-- [ ] `SLACK_SIGNING_SECRET` — still required on Railway
-- [ ] Slack slash command URL → `https://qa-automation-production-9b20.up.railway.app/trigger`
-
-### 3. GitHub Actions secrets
-
-After `.env` is filled from `.env.example`:
-
-```powershell
-.\scripts\setup-github-secrets.ps1
+**From Slack:**
 ```
+/run-tests br CYCLE-42
+```
+(Replace `CYCLE-42` with a real Zephyr cycle ID.)
 
-### 4. Real Shopify dev store URLs
+**Or from GitHub:** Actions → Run QA Browser Tests → Run workflow → `app: br`, `cycle_id: CYCLE-42`
 
-Edit `config/apps.json` with production dev store URLs, commit, and push.
+## Optional
+
+- [ ] Replace placeholder Shopify store URLs in `config/apps.json`
+- [ ] Confirm Slack slash command URL points to `https://qa-automation-production-9b20.up.railway.app/trigger`
