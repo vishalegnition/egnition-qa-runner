@@ -6,8 +6,8 @@ Shopify QA browser automation: trigger regression tests from Slack, run headed C
 
 | Component | Location | Role |
 |-----------|----------|------|
-| Webhook receiver | `webhook/` on Railway | Slack slash command → GitHub Actions dispatch |
-| Test runner | `runner/` on GitHub Actions | Zephyr fetch → Playwright + vision loop → Slack report |
+| Webhook + browser runner | `webhook/` on Railway | Slack slash command → headed Chrome tests on Railway (Xvfb) |
+| Test runner (optional) | `runner/` on GitHub Actions | Same runner if `RUN_TESTS_ON_GITHUB=true` on Railway |
 | App config | `config/apps.json` | App name → Shopify dev store URL |
 
 ## Slack command
@@ -45,11 +45,12 @@ Edit `config/apps.json` with your real shared dev store URL on every app entry (
 
 ### 3. Railway webhook
 
-Deploy `webhook/index.js` to Railway. Set:
+Deploy to Railway. Set:
 
 - `SLACK_SIGNING_SECRET`
-- `GITHUB_TOKEN` (PAT with `repo` + `workflow` scope)
-- `GITHUB_REPO_OWNER`, `GITHUB_REPO_NAME`
+- `SHOPIFY_SESSION_COOKIES` (same Cookie-Editor JSON as GitHub)
+- `ZEPHYR_API_TOKEN`, `OPENROUTER_API_KEY`, `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`
+- Optional: `CAPSOLVER_API_KEY`, `GITHUB_TOKEN` (only if `RUN_TESTS_ON_GITHUB=true`)
 
 Point the Slack slash command Request URL to: `https://<your-railway-app>/trigger`
 

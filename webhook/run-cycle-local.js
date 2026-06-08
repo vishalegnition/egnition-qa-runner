@@ -6,20 +6,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, '..');
 
 /**
- * Run tests on Railway using a saved session (subsequent /run-tests without re-login).
+ * Run the browser test cycle on this Railway instance (headed Chrome via Xvfb).
  */
-export function runCycleLocally({ app, cycleId, storageStateBase64, slackChannel }) {
+export function runCycleOnRailway({ app, cycleId, slackChannel }) {
   const runnerPath = path.join(repoRoot, 'runner', 'index.js');
   const env = {
     ...process.env,
     APP: app,
     CYCLE_ID: cycleId,
-    SHOPIFY_STORAGE_STATE: storageStateBase64,
-    RAILWAY_LOCAL_SESSION: '1',
+    RUN_ON_RAILWAY: '1',
+    DISPLAY: process.env.DISPLAY || ':99',
   };
   if (slackChannel) env.SLACK_CHANNEL_ID = slackChannel;
 
-  console.log(`Starting test run with saved session: ${app} / ${cycleId}`);
+  console.log(`Starting Railway browser test run: ${app} / ${cycleId}`);
 
   const child = spawn(process.execPath, [runnerPath], {
     env,
@@ -29,7 +29,7 @@ export function runCycleLocally({ app, cycleId, storageStateBase64, slackChannel
   });
 
   child.unref();
-  child.on('error', (err) => console.error('Local runner failed to start:', err));
+  child.on('error', (err) => console.error('Railway runner failed to start:', err));
 
   return child.pid;
 }

@@ -125,20 +125,29 @@ export async function isCloudflarePage(page) {
 
 export function buildSessionExpiredMessage(appConfig) {
   const store = appConfig.store_url?.replace(/\/$/, '') ?? '[store]';
+  const where = process.env.RUN_ON_RAILWAY === '1' ? 'Railway env var' : 'GitHub secret';
   return (
     `Shopify session expired (shared dev store).\n` +
-    `Refresh GitHub secret: ${COOKIE_SECRET}\n` +
+    `Refresh ${COOKIE_SECRET} in ${where}.\n` +
     `Log in to ${store}/admin with "Remember me" → Cookie-Editor → Export as JSON.`
   );
 }
 
 export function buildCloudflareBlockedMessage() {
   const hasCapsolver = Boolean(process.env.CAPSOLVER_API_KEY);
-  let msg =
-    'Cloudflare blocked the browser (Verify you are human). Session cookies bypass Shopify login but cannot bypass Cloudflare on GitHub Actions datacenter IPs.\n\n' +
-    'Fix options:\n' +
-    '1. Add CAPSOLVER_API_KEY to GitHub secrets (automated Turnstile solver)\n' +
-    '2. Re-export cookies after passing Cloudflare on https://admin.shopify.com (may still fail on CI without CapSolver)';
+  const onRailway = process.env.RUN_ON_RAILWAY === '1';
+
+  let msg = onRailway
+    ? 'Cloudflare blocked the Railway browser (Verify you are human).\n\nFix options:\n'
+    : 'Cloudflare blocked the browser on GitHub Actions (datacenter IP).\n\nFix options:\n';
+
+  msg +=
+    '1. Re-export SHOPIFY_SESSION_COOKIES while logged in on the dev store admin\n' +
+    '2. Add CAPSOLVER_API_KEY for automated Turnstile solving';
+
+  if (!onRailway) {
+    msg += '\n3. Tests now run on Railway by default — use /run-tests in Slack (not GitHub Actions)';
+  }
 
   if (!hasCapsolver) {
     msg += '\n\nCAPSOLVER_API_KEY is not configured.';

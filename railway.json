@@ -4,9 +4,9 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "node webhook/index.js",
+    "startCommand": "bash -c 'Xvfb :99 -screen 0 1440x900x24 & export DISPLAY=:99; sleep 2; exec node webhook/index.js'",
     "healthcheckPath": "/health",
-    "healthcheckTimeout": 120,
+    "healthcheckTimeout": 180,
     "restartPolicyType": "ON_FAILURE"
   }
 }
