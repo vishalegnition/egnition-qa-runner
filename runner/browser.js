@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { authenticator } from 'otplib';
+import { generate as generateTotp } from 'otplib';
 
 const HEADLESS = process.env.PLAYWRIGHT_HEADLESS === 'true';
 
@@ -22,12 +22,12 @@ export async function launchBrowser() {
   return { browser, context, page };
 }
 
-function generateTotpCode() {
+async function generateTotpCode() {
   const secret = process.env.SHOPIFY_2FA_SECRET?.replace(/\s+/g, '');
   if (!secret) {
     throw new Error('SHOPIFY_2FA_SECRET is required when Shopify prompts for 2FA');
   }
-  return authenticator.generate(secret);
+  return generateTotp({ secret });
 }
 
 /**
@@ -57,7 +57,7 @@ async function handleTwoFactor(page) {
     await codeInput.first().waitFor({ state: 'visible', timeout: 10000 });
   }
 
-  const code = generateTotpCode();
+  const code = await generateTotpCode();
   await codeInput.first().fill(code);
 
   await page
