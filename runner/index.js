@@ -99,14 +99,13 @@ export async function main() {
 
   let testCases;
   try {
-    env('ZEPHYR_BASE_URL');
     env('ZEPHYR_API_TOKEN');
     const data = await fetchCycleWithTestCases(cycleId);
     testCases = data.testCases;
   } catch (err) {
     if (err.status === 404 || err.message?.includes('404')) {
       await postError(
-        `Could not find cycle ${cycleId}. Check the cycle ID and try again.`
+        `Could not find Zephyr cycle "${cycleId}". In Zephyr Scale, open the cycle and copy its key from the URL or header (e.g. BR-R104). Then run: /run-tests br ${cycleId}`
       );
     } else {
       await postError(`Zephyr error: ${err.message}`);
