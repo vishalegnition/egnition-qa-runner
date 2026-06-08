@@ -68,7 +68,9 @@ async function runTestCase(page, testCase, cycleId, appConfig) {
 }
 
 function isSessionError(msg = '') {
-  return /session expired|cookie|SHOPIFY_SESSION_COOKIES/i.test(msg);
+  return /session expired|cloudflare|cookie|SHOPIFY_SESSION_COOKIES|verify you are human/i.test(
+    msg
+  );
 }
 
 /**
@@ -151,9 +153,18 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
       results.push(result);
       console.log(`  ${result.passed ? 'PASS' : 'FAIL'}: ${result.reason ?? 'ok'}`);
 
-      if (!result.passed && isSessionExpired(page.url())) {
+      if (
+        !result.passed &&
+        (isSessionExpired(page.url()) ||
+          /cloudflare|verify you are human|session expired|not on shopify admin/i.test(
+            result.reason ?? ''
+          ))
+      ) {
         sessionDead = true;
-        await postError(buildSessionExpiredMessage(appConfig), channel);
+        if (/cloudflare|verify you are human/i.test(result.reason ?? '')) {
+          const { buildCloudflareBlockedMessage } = await import('./browser.js');
+          await postError(buildCloudflareBlockedMessage(), channel);
+        }
       }
 
       const passed = results.filter((r) => r.passed).length;

@@ -1,4 +1,5 @@
 import { chromium } from 'patchright';
+import { solveTurnstileOnPage, solveCloudflareChallenge } from './capsolver.js';
 
 const HEADLESS = process.env.PLAYWRIGHT_HEADLESS === 'true';
 
@@ -11,10 +12,14 @@ function storeHandleFromUrl(storeUrl) {
   return null;
 }
 
+/** Prefer myshopify.com/admin — fewer Cloudflare challenges than admin.shopify.com on CI. */
 export function storeAdminUrl(storeUrl) {
-  const handle = storeHandleFromUrl(storeUrl);
-  if (handle) return `https://admin.shopify.com/store/${handle}`;
   const base = storeUrl.replace(/\/$/, '');
+  if (/\.myshopify\.com/i.test(base)) {
+    return base.includes('/admin') ? base : `${base}/admin`;
+  }
+  const handle = storeHandleFromUrl(storeUrl);
+  if (handle) return `https://${handle}.myshopify.com/admin`;
   return base.includes('/admin') ? base : `${base}/admin`;
 }
 
@@ -29,7 +34,6 @@ const SAME_SITE_MAP = {
   '': 'Lax',
 };
 
-/** Cookie-Editor / browser exports use values Playwright rejects — normalize first. */
 export function normalizeCookiesForPlaywright(rawCookies) {
   return rawCookies
     .map((c) => {
@@ -52,9 +56,7 @@ export function normalizeCookiesForPlaywright(rawCookies) {
         secure: Boolean(c.secure),
       };
 
-      if (c.session) {
-        // Session cookie — omit expires
-      } else {
+      if (!c.session) {
         const exp = c.expires ?? c.expirationDate;
         if (typeof exp === 'number' && exp > 0) {
           out.expires = exp > 1e12 ? Math.floor(exp / 1000) : Math.floor(exp);
@@ -66,7 +68,6 @@ export function normalizeCookiesForPlaywright(rawCookies) {
     .filter(Boolean);
 }
 
-/** Load Cookie-Editor JSON — one session for the shared dev store (all apps). */
 export function loadSessionCookies() {
   const raw = process.env[COOKIE_SECRET];
   if (!raw?.trim()) {
@@ -97,13 +98,52 @@ export function isSessionExpired(url) {
   return /\/login|\/account\/login|accounts\.shopify\.com|no_cookie_session/i.test(url);
 }
 
+export async function isCloudflarePage(page) {
+  const title = await page.title().catch(() => '');
+  const url = page.url();
+  if (
+    /just a moment|verify you are human|needs to be verified|verifying your connection|attention required/i.test(
+      title
+    )
+  ) {
+    return true;
+  }
+  if (url.includes('__cf_chl') || url.includes('challenges.cloudflare.com')) {
+    return true;
+  }
+  const cfText = await page
+    .getByText(/verify you are human|your connection needs to be verified/i)
+    .first()
+    .isVisible()
+    .catch(() => false);
+  if (cfText) return true;
+  const hasTurnstile =
+    (await page.locator('input[name="cf-turnstile-response"]').count()) > 0;
+  const hasEmail = (await page.locator('input[type="email"]').count()) > 0;
+  return hasTurnstile && !hasEmail;
+}
+
 export function buildSessionExpiredMessage(appConfig) {
   const store = appConfig.store_url?.replace(/\/$/, '') ?? '[store]';
   return (
     `Shopify session expired (shared dev store).\n` +
-    `Please refresh cookies in GitHub Actions secret: ${COOKIE_SECRET}\n` +
-    `Steps: Log in to ${store}/admin with "Remember me" checked → Cookie-Editor → Export as JSON → paste into the secret.`
+    `Refresh GitHub secret: ${COOKIE_SECRET}\n` +
+    `Log in to ${store}/admin with "Remember me" → Cookie-Editor → Export as JSON.`
   );
+}
+
+export function buildCloudflareBlockedMessage() {
+  const hasCapsolver = Boolean(process.env.CAPSOLVER_API_KEY);
+  let msg =
+    'Cloudflare blocked the browser (Verify you are human). Session cookies bypass Shopify login but cannot bypass Cloudflare on GitHub Actions datacenter IPs.\n\n' +
+    'Fix options:\n' +
+    '1. Add CAPSOLVER_API_KEY to GitHub secrets (automated Turnstile solver)\n' +
+    '2. Re-export cookies after passing Cloudflare on https://admin.shopify.com (may still fail on CI without CapSolver)';
+
+  if (!hasCapsolver) {
+    msg += '\n\nCAPSOLVER_API_KEY is not configured.';
+  }
+  return msg;
 }
 
 function emailInput(page) {
@@ -114,11 +154,22 @@ function emailInput(page) {
 }
 
 async function isAdminReady(page) {
+  if (await isCloudflarePage(page)) return false;
   const url = page.url();
   if (!/admin\.shopify\.com\/store\//i.test(url) && !/\.myshopify\.com\/admin/i.test(url)) {
     return false;
   }
   return !(await emailInput(page).first().isVisible().catch(() => false));
+}
+
+async function tryBypassCloudflare(page) {
+  if (!process.env.CAPSOLVER_API_KEY) return false;
+  console.log('Cloudflare detected — trying CapSolver...');
+  const solved =
+    (await solveTurnstileOnPage(page).catch(() => false)) ||
+    (await solveCloudflareChallenge(page).catch(() => false));
+  if (solved) await page.waitForTimeout(3000);
+  return solved;
 }
 
 export async function launchBrowser() {
@@ -139,21 +190,29 @@ export async function launchBrowser() {
   return { browser, context, page };
 }
 
-/**
- * Inject session cookies and open Shopify admin. Throws if session expired.
- */
 export async function openShopifyAdminWithCookies(context, page, appConfig) {
   const cookies = loadSessionCookies();
   await context.addCookies(cookies);
 
-  const target = storeAdminUrl(appConfig.store_url);
-  console.log(`Navigating to ${target} with injected session cookies`);
-  await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  const storeBase = appConfig.store_url.replace(/\/$/, '');
+  const adminUrl = storeAdminUrl(appConfig.store_url);
 
+  console.log(`Warming session at ${storeBase}`);
+  await page.goto(storeBase, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+
+  console.log(`Navigating to ${adminUrl} with injected cookies`);
+  await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForTimeout(2000);
-  const url = page.url();
 
-  if (isSessionExpired(url) || !(await isAdminReady(page))) {
+  if (await isCloudflarePage(page)) {
+    await tryBypassCloudflare(page);
+  }
+
+  if (await isCloudflarePage(page)) {
+    throw new Error(buildCloudflareBlockedMessage());
+  }
+
+  if (isSessionExpired(page.url()) || !(await isAdminReady(page))) {
     throw new Error(buildSessionExpiredMessage(appConfig));
   }
 
@@ -166,8 +225,10 @@ export async function closeBrowser(browser) {
   }
 }
 
-/** Human-readable reason if the page is not ready for test steps. */
 export async function getSessionBlockReason(page, appConfig) {
+  if (await isCloudflarePage(page)) {
+    return buildCloudflareBlockedMessage();
+  }
   const url = page.url();
   if (isSessionExpired(url)) {
     return buildSessionExpiredMessage(appConfig);

@@ -45,6 +45,7 @@ jobs:
           APP: ${{ inputs.app }}
           CYCLE_ID: ${{ inputs.cycle_id }}
           SHOPIFY_SESSION_COOKIES: ${{ secrets.SHOPIFY_SESSION_COOKIES }}
+          CAPSOLVER_API_KEY: ${{ secrets.CAPSOLVER_API_KEY }}
           ZEPHYR_API_TOKEN: ${{ secrets.ZEPHYR_API_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
