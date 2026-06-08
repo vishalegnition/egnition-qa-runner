@@ -17,6 +17,7 @@ import {
   checkAuthComplete,
   exportAuthStorageState,
   stopAuthBrowser,
+  solveAuthCloudflare,
 } from './auth-browser.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,12 +72,16 @@ export function registerAuthRoutes(app, { triggerWorkflow }) {
     #screen { width: 100%; border: 1px solid #444; cursor: crosshair; display: block; background: #000; }
     #status { margin: 12px 0; padding: 8px; background: #222; border-radius: 6px; }
     input#typebox { width: 100%; padding: 8px; margin: 8px 0; font-size: 1rem; }
+    button { padding: 8px 14px; margin: 4px 8px 4px 0; font-size: 0.95rem; cursor: pointer; }
+    #cf-help { display: none; color: #fc6; font-size: 0.9rem; margin: 8px 0; }
     .ok { color: #6f6; }
   </style>
 </head><body>
   <h1>Log in to Shopify — ${run.app} / ${run.cycleId}</h1>
   <p class="hint">Click the image to interact (email, password, Cloudflare checkbox). Type below and press Enter to send keys.</p>
   <div id="status">Starting browser…</div>
+  <div id="cf-help">Cloudflare detected — click directly on the checkbox in the image. The page will not auto-reload while you verify.</div>
+  <button type="button" id="cf-btn" style="display:none">Help click Cloudflare checkbox</button>
   <img id="screen" alt="Remote browser"/>
   <input id="typebox" placeholder="Type here, press Enter to send to browser" />
   <script>
@@ -84,7 +89,11 @@ export function registerAuthRoutes(app, { triggerWorkflow }) {
     const img = document.getElementById('screen');
     const status = document.getElementById('status');
     const typebox = document.getElementById('typebox');
+    const cfHelp = document.getElementById('cf-help');
+    const cfBtn = document.getElementById('cf-btn');
     let pollTimer;
+    let lastRefresh = 0;
+    let onCloudflare = false;
 
     async function api(path, opts) {
       const r = await fetch('/auth/' + runId + path, opts);
@@ -117,16 +126,36 @@ export function registerAuthRoutes(app, { triggerWorkflow }) {
       }
     });
 
+    cfBtn.addEventListener('click', async () => {
+      status.textContent = 'Clicking Cloudflare checkbox…';
+      await api('/solve-cloudflare', { method: 'POST' });
+      await refresh();
+      status.textContent = 'If still stuck, click the checkbox in the image yourself.';
+    });
+
     async function pollStatus() {
       const r = await api('/status');
       const data = await r.json();
       if (data.ready) {
         status.innerHTML = '<span class="ok">✓ Logged in! Starting tests…</span>';
+        cfHelp.style.display = 'none';
+        cfBtn.style.display = 'none';
         clearInterval(pollTimer);
         return;
       }
-      status.textContent = data.title || data.url || 'Waiting for login…';
-      await refresh();
+      onCloudflare = Boolean(data.cloudflare);
+      cfHelp.style.display = onCloudflare ? 'block' : 'none';
+      cfBtn.style.display = onCloudflare ? 'inline-block' : 'none';
+      status.textContent = onCloudflare
+        ? 'Cloudflare — click the checkbox in the image (no auto-reload)'
+        : (data.title || data.url || 'Waiting for login…');
+
+      const now = Date.now();
+      const interval = onCloudflare ? 10000 : 3000;
+      if (now - lastRefresh >= interval) {
+        await refresh();
+        lastRefresh = now;
+      }
     }
 
     (async () => {
@@ -174,6 +203,15 @@ export function registerAuthRoutes(app, { triggerWorkflow }) {
     try {
       await typeAuth(req.params.runId, req.body.text ?? '');
       res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/auth/:runId/solve-cloudflare', async (req, res) => {
+    try {
+      const result = await solveAuthCloudflare(req.params.runId);
+      res.json({ ok: true, ...result });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
