@@ -30,8 +30,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright Chromium
-        run: npx playwright install chromium --with-deps
+      - name: Install Patchright Chrome
+        run: npx patchright install chrome --with-deps
 
       - name: Start Xvfb
         run: |
@@ -48,6 +48,7 @@ jobs:
           SHOPIFY_ADMIN_PASSWORD: ${{ secrets.SHOPIFY_ADMIN_PASSWORD }}
           SHOPIFY_2FA_SECRET: ${{ secrets.SHOPIFY_2FA_SECRET }}
           SHOPIFY_STORAGE_STATE: ${{ secrets.SHOPIFY_STORAGE_STATE }}
+          CAPSOLVER_API_KEY: ${{ secrets.CAPSOLVER_API_KEY }}
           ZEPHYR_API_TOKEN: ${{ secrets.ZEPHYR_API_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

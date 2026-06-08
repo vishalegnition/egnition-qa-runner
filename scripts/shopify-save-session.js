@@ -17,8 +17,8 @@ const storeUrl =
   process.env.SHOPIFY_STORE_URL || 'https://admin.shopify.com';
 
 console.log('\n=== Shopify session saver (for CI) ===\n');
-console.log('Cloudflare blocks automated login on GitHub Actions.');
-console.log('You log in once here; CI reuses this saved session.\n');
+console.log('GitHub Actions cannot click Cloudflare for you.');
+console.log('YOU solve Cloudflare + login here once; CI reuses this session for weeks.\n');
 
 const browser = await chromium.launch({ headless: false, channel: 'chromium' });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });

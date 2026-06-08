@@ -19,6 +19,7 @@
     "@slack/web-api": "^7.8.0",
     "express": "^4.21.2",
     "otplib": "^13.4.1",
+    "patchright": "^1.60.2",
     "playwright": "^1.50.1"
   }
 }

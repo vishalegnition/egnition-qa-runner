@@ -2,12 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchCycleWithTestCases } from './zephyr.js';
-import {
-  launchBrowser,
-  loginToShopify,
-  closeBrowser,
-  assertShopifySessionForCI,
-} from './browser.js';
+import { launchBrowser, loginToShopify, closeBrowser } from './browser.js';
 import { runStepLoop } from './actions.js';
 import { postResults, postError, screenshotPath } from './slack.js';
 import { parseModelResponse } from './vision.js';
@@ -115,13 +110,6 @@ export async function main() {
     } else {
       await postError(`Zephyr error: ${err.message}`);
     }
-    process.exit(1);
-  }
-
-  try {
-    assertShopifySessionForCI();
-  } catch (err) {
-    await postError(err.message);
     process.exit(1);
   }
 
