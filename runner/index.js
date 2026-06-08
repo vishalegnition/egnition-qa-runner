@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchCycleWithTestCases } from './zephyr.js';
 import { launchBrowser, loginToShopify, closeBrowser } from './browser.js';
+import { fetchSlackAuthSession } from './fetch-auth-session.js';
 import { runStepLoop } from './actions.js';
 import { postResults, postError, screenshotPath } from './slack.js';
 import { parseModelResponse } from './vision.js';
@@ -111,6 +112,20 @@ export async function main() {
       await postError(`Zephyr error: ${err.message}`);
     }
     process.exit(1);
+  }
+
+  const authRunId = process.env.AUTH_RUN_ID;
+  if (authRunId && !process.env.SHOPIFY_STORAGE_STATE) {
+    try {
+      const session = await fetchSlackAuthSession(authRunId);
+      if (session) {
+        process.env.SHOPIFY_STORAGE_STATE = session;
+        console.log(`Loaded Shopify session from Slack auth run ${authRunId}`);
+      }
+    } catch (err) {
+      await postError(`Could not load Slack auth session: ${err.message}`);
+      process.exit(1);
+    }
   }
 
   let browser;

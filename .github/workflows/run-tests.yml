@@ -11,6 +11,10 @@ on:
         description: 'Zephyr test cycle key (e.g. BR-R104 for BestSellers reSort)'
         required: true
         type: string
+      auth_run_id:
+        description: 'Session ID from Slack login flow (set automatically)'
+        required: false
+        type: string
 
 jobs:
   run-tests:
@@ -44,6 +48,9 @@ jobs:
         env:
           APP: ${{ inputs.app }}
           CYCLE_ID: ${{ inputs.cycle_id }}
+          AUTH_RUN_ID: ${{ inputs.auth_run_id }}
+          QA_WEBHOOK_BASE_URL: https://qa-automation-production-9b20.up.railway.app
+          AUTH_FETCH_SECRET: ${{ secrets.AUTH_FETCH_SECRET }}
           SHOPIFY_ADMIN_EMAIL: ${{ secrets.SHOPIFY_ADMIN_EMAIL }}
           SHOPIFY_ADMIN_PASSWORD: ${{ secrets.SHOPIFY_ADMIN_PASSWORD }}
           SHOPIFY_2FA_SECRET: ${{ secrets.SHOPIFY_2FA_SECRET }}

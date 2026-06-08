@@ -1,8 +1,7 @@
 import crypto from 'crypto';
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { createPendingRun } from './pending-runs.js';
+import { registerAuthRoutes, publicBaseUrl } from './auth-routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -57,7 +56,7 @@ function parseCommand(text) {
   return { ok: true, app, cycleId };
 }
 
-async function triggerGitHubWorkflow(app, cycleId) {
+async function triggerGitHubWorkflow({ app, cycleId, authRunId }) {
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_REPO_OWNER;
   const repo = process.env.GITHUB_REPO_NAME;
@@ -68,6 +67,9 @@ async function triggerGitHubWorkflow(app, cycleId) {
 
   const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/run-tests.yml/dispatches`;
 
+  const inputs = { app, cycle_id: cycleId };
+  if (authRunId) inputs.auth_run_id = authRunId;
+
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -76,13 +78,7 @@ async function triggerGitHubWorkflow(app, cycleId) {
       'X-GitHub-Api-Version': '2022-11-28',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      ref: 'main',
-      inputs: {
-        app,
-        cycle_id: cycleId,
-      },
-    }),
+    body: JSON.stringify({ ref: 'main', inputs }),
   });
 
   if (!res.ok) {
@@ -93,6 +89,8 @@ async function triggerGitHubWorkflow(app, cycleId) {
 
 const app = express();
 const rawBodyParser = express.raw({ type: 'application/x-www-form-urlencoded' });
+
+registerAuthRoutes(app, { triggerWorkflow: triggerGitHubWorkflow });
 
 app.post('/trigger', rawBodyParser, async (req, res) => {
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
@@ -115,30 +113,34 @@ app.post('/trigger', rawBodyParser, async (req, res) => {
   const parsed = parseCommand(commandText);
 
   if (!parsed.ok) {
-    res.json({
-      response_type: 'ephemeral',
-      text: parsed.error,
-    });
+    res.json({ response_type: 'ephemeral', text: parsed.error });
     return;
   }
 
   const { app: appName, cycleId } = parsed;
+  const runId = createPendingRun({
+    app: appName,
+    cycleId,
+    slackChannel: params.get('channel_id'),
+    slackUser: params.get('user_id'),
+  });
+
+  const authUrl = `${publicBaseUrl()}/auth/${runId}`;
 
   res.json({
     response_type: 'in_channel',
-    text: `Test run started for ${appName} — cycle ${cycleId}. Results will be posted here shortly.`,
-  });
-
-  triggerGitHubWorkflow(appName, cycleId).catch((err) => {
-    console.error('Failed to trigger workflow:', err.message);
+    text:
+      `*${appName}* cycle *${cycleId}* — log in to Shopify to start tests:\n` +
+      `<${authUrl}|Open login browser> (works on phone or laptop — pass Cloudflare here, then tests run automatically)`,
   });
 });
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', auth: true });
 });
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Webhook receiver listening on port ${port}`);
+  console.log(`Webhook + auth server on port ${port}`);
+  console.log(`Public URL: ${publicBaseUrl()}`);
 });
