@@ -27,7 +27,7 @@ async function zephyrFetch(path) {
 
 /**
  * Fetch test cycle metadata and associated test case keys.
- * @param {string} cycleId - e.g. CYCLE-42
+ * @param {string} cycleId - e.g. BR-R104
  */
 export async function fetchTestCycle(cycleId) {
   return zephyrFetch(`/rest/atm/1.0/testrun/${encodeURIComponent(cycleId)}`);

@@ -17,11 +17,12 @@
 
 **From Slack:**
 ```
-/run-tests br CYCLE-42
+/run-tests br BR-R104
 ```
-(Replace `CYCLE-42` with a real Zephyr cycle ID.)
 
-**Or from GitHub:** Actions → Run QA Browser Tests → Run workflow → `app: br`, `cycle_id: CYCLE-42`
+Cycle keys are app-prefixed, e.g. `BR-R104` (BestSellers reSort), `OOSP-R…`, `MSSP-R…`, `OL-R…`.
+
+**Or from GitHub:** Actions → Run QA Browser Tests → Run workflow → `app: br`, `cycle_id: BR-R104`
 
 ## Optional
 

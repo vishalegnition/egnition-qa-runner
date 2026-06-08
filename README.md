@@ -18,6 +18,12 @@ Shopify QA browser automation: trigger regression tests from Slack, run headed C
 
 Valid apps: `br` (BestSellers reSort), `oosp` (StockIQ), `mssp` (Multi-Store Sync Power), `ol` (Commetiq Order Limits)
 
+Cycle keys follow your Zephyr naming, e.g. `BR-R104` for a BestSellers reSort test cycle:
+
+```
+/run-tests br BR-R104
+```
+
 **Repository:** https://github.com/vishalegnition/egnition-qa-runner
 
 See [SETUP_STATUS.md](SETUP_STATUS.md) for automated setup progress and remaining one-time steps.
@@ -78,10 +84,10 @@ npm install
 npx playwright install chromium
 
 # Test Zephyr fetch
-CYCLE_ID=CYCLE-42 node runner/zephyr.js
+CYCLE_ID=BR-R104 node runner/zephyr.js
 
 # Run full cycle (headed locally — omit Xvfb on Windows/Mac)
-APP=br CYCLE_ID=CYCLE-42 node runner/index.js
+APP=br CYCLE_ID=BR-R104 node runner/index.js
 
 # Webhook receiver
 npm run webhook
@@ -94,7 +100,7 @@ In GitHub: **Actions → Run QA Browser Tests → Run workflow**, enter `app` an
 ## Build order (from spec)
 
 1. Repo scaffold ✓
-2. `zephyr.js` — `node runner/zephyr.js CYCLE-42`
+2. `zephyr.js` — `node runner/zephyr.js BR-R104`
 3. `browser.js` — login via Actions or local
 4. `vision.js` — OpenRouter with screenshot
 5. `runner/index.js` — full cycle + Slack report

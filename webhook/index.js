@@ -39,7 +39,7 @@ function parseCommand(text) {
     return {
       ok: false,
       error:
-        'Usage: `/run-tests [app] [cycle-id]`\n\nExample: `/run-tests br CYCLE-42`\n\nValid apps: ' +
+        'Usage: `/run-tests [app] [cycle-id]`\n\nExample: `/run-tests br BR-R104`\n\nValid apps: ' +
         VALID_APPS.join(', '),
     };
   }

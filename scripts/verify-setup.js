@@ -79,7 +79,7 @@ try {
 try {
   const text = buildReport({
     appName: 'BestSellers reSort',
-    cycleId: 'CYCLE-42',
+    cycleId: 'BR-R104',
     startedAt: new Date('2026-06-04T14:03:00Z'),
     durationMs: 502000,
     results: [
