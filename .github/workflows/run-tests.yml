@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       app:
-        description: 'App identifier (bestsellerssort, stockiq, mssp, commetiq)'
+        description: 'App identifier (br, oosp, mssp, ol)'
         required: true
         type: string
       cycle_id:

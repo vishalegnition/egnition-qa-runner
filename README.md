@@ -16,7 +16,7 @@ Shopify QA browser automation: trigger regression tests from Slack, run headed C
 /run-tests [app] [cycle-id]
 ```
 
-Valid apps: `bestsellerssort`, `stockiq`, `mssp`, `commetiq`
+Valid apps: `br` (BestSellers reSort), `oosp` (StockIQ), `mssp` (Multi-Store Sync Power), `ol` (Commetiq Order Limits)
 
 **Repository:** https://github.com/vishalegnition/egnition-qa-runner
 
@@ -49,9 +49,25 @@ Point the Slack slash command Request URL to: `https://<your-railway-app>/trigge
 
 ### 4. Slack app
 
-- Create slash command `/run-tests` → webhook URL above
-- Bot scopes: `chat:write`, `files:write`
-- Install to workspace; add bot to the QA results channel
+**How instructions reach the runner:** `/run-tests` is a **slash command**. Slack sends the command text to the Railway webhook (`/trigger`). That is verified with `SLACK_SIGNING_SECRET` — not the bot token. The bot token is only used to **post results back** to the channel.
+
+**Bot Token Scopes** (OAuth & Permissions → Bot Token Scopes):
+
+| Scope | Why |
+|-------|-----|
+| `chat:write` | Post the QA summary report |
+| `files:write` | Upload pass/fail screenshots |
+| `channels:read` | See public channel info (e.g. validate `SLACK_CHANNEL_ID`) |
+| `groups:read` | Same for **private** QA channels |
+| `chat:write.public` | Optional — post to a public channel without `/invite` |
+
+You do **not** need `channels:history` or `channels:read` to receive `/run-tests` — that comes through the slash-command webhook.
+
+**Also configure:**
+- Slash command `/run-tests` → `https://qa-automation-production-9b20.up.railway.app/trigger`
+- Install app to workspace → copy `xoxb-...` bot token
+- Basic Information → copy **Signing Secret** → Railway `SLACK_SIGNING_SECRET`
+- `/invite` the bot to your QA channel; copy channel ID (`C...`) → GitHub `SLACK_CHANNEL_ID`
 
 ## Local development
 
@@ -65,7 +81,7 @@ npx playwright install chromium
 CYCLE_ID=CYCLE-42 node runner/zephyr.js
 
 # Run full cycle (headed locally — omit Xvfb on Windows/Mac)
-APP=bestsellerssort CYCLE_ID=CYCLE-42 node runner/index.js
+APP=br CYCLE_ID=CYCLE-42 node runner/index.js
 
 # Webhook receiver
 npm run webhook

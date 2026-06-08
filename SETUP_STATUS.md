@@ -30,7 +30,7 @@
 - [ ] `SHOPIFY_2FA_SECRET` (TOTP secret — not a one-time code)
 - [ ] `ZEPHYR_API_TOKEN`
 - [ ] `OPENROUTER_API_KEY`
-- [ ] `SLACK_BOT_TOKEN`
+- [ ] `SLACK_BOT_TOKEN` (scopes: `chat:write`, `files:write`, `channels:read`, `groups:read`)
 - [ ] `SLACK_CHANNEL_ID`
 
 ### 2. Railway webhook deploy

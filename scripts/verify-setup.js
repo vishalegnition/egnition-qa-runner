@@ -26,7 +26,7 @@ try {
   const apps = JSON.parse(
     fs.readFileSync(path.join(root, 'config', 'apps.json'), 'utf8')
   );
-  const required = ['bestsellerssort', 'stockiq', 'mssp', 'commetiq'];
+  const required = ['br', 'oosp', 'mssp', 'ol'];
   for (const id of required) {
     if (!apps[id]?.store_url || !apps[id]?.name) {
       throw new Error(`missing config for ${id}`);

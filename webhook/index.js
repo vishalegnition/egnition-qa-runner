@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const VALID_APPS = ['bestsellerssort', 'stockiq', 'mssp', 'commetiq'];
+const VALID_APPS = ['br', 'oosp', 'mssp', 'ol'];
 
 function verifySlackSignature(signingSecret, signature, timestamp, rawBody) {
   if (!signature || !timestamp) return false;
@@ -39,7 +39,7 @@ function parseCommand(text) {
     return {
       ok: false,
       error:
-        'Usage: `/run-tests [app] [cycle-id]`\n\nExample: `/run-tests bestsellerssort CYCLE-42`\n\nValid apps: ' +
+        'Usage: `/run-tests [app] [cycle-id]`\n\nExample: `/run-tests br CYCLE-42`\n\nValid apps: ' +
         VALID_APPS.join(', '),
     };
   }
