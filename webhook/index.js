@@ -3,8 +3,6 @@ import express from 'express';
 import { createPendingRun } from './pending-runs.js';
 import { registerAuthRoutes, publicBaseUrl } from './auth-routes.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const VALID_APPS = ['br', 'oosp', 'mssp', 'ol'];
 
 function verifySlackSignature(signingSecret, signature, timestamp, rawBody) {

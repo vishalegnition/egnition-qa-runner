@@ -2,7 +2,4 @@
 aptPkgs = ["xvfb", "x11-utils", "fonts-liberation"]
 
 [phases.install]
-cmds = ["npm ci", "npx patchright install chrome"]
-
-[start]
-cmd = "sh scripts/start-webhook.sh"
+cmds = ["npx patchright install chrome"]

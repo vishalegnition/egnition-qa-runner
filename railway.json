@@ -6,7 +6,7 @@
   "deploy": {
     "startCommand": "sh scripts/start-webhook.sh",
     "healthcheckPath": "/health",
-    "healthcheckTimeout": 30,
+    "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE"
   }
 }
