@@ -2,7 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchCycleWithTestCases } from './zephyr.js';
-import { launchBrowser, loginToShopify, closeBrowser } from './browser.js';
+import {
+  launchBrowser,
+  loginToShopify,
+  closeBrowser,
+  assertShopifySessionForCI,
+} from './browser.js';
 import { runStepLoop } from './actions.js';
 import { postResults, postError, screenshotPath } from './slack.js';
 import { parseModelResponse } from './vision.js';
@@ -113,6 +118,13 @@ export async function main() {
     process.exit(1);
   }
 
+  try {
+    assertShopifySessionForCI();
+  } catch (err) {
+    await postError(err.message);
+    process.exit(1);
+  }
+
   let browser;
   let page;
   const results = [];
@@ -124,9 +136,7 @@ export async function main() {
     try {
       await loginToShopify(page, storeUrl, { hasStorageState });
     } catch (err) {
-      await postError(
-        `Shopify login failed: ${err.message}. Check SHOPIFY_ADMIN_EMAIL, SHOPIFY_ADMIN_PASSWORD, and SHOPIFY_2FA_SECRET.`
-      );
+      await postError(`Shopify login failed: ${err.message}`);
       process.exit(1);
     }
 

@@ -46,11 +46,25 @@ async function detectCloudflare(page) {
   return turnstile > 0 && (await page.locator('input[type="email"], #account_email').count()) === 0;
 }
 
+function storageStateHelp() {
+  return (
+    'Shopify blocks bot login via Cloudflare on cloud servers (GitHub Actions). ' +
+    'This cannot be bypassed with email/password alone. ' +
+    'On your PC run: node scripts/shopify-save-session.js — then add GitHub secret SHOPIFY_STORAGE_STATE with the base64 output.'
+  );
+}
+
+export function assertShopifySessionForCI() {
+  if (process.env.CI !== 'true') return;
+  if (process.env.SHOPIFY_STORAGE_STATE?.trim()) return;
+  throw new Error(
+    'SHOPIFY_STORAGE_STATE is not set. ' + storageStateHelp()
+  );
+}
+
 async function throwIfCloudflare(page) {
   if (await detectCloudflare(page)) {
-    throw new Error(
-      'Shopify blocked automated login (Cloudflare challenge). Save a browser session once with: node scripts/shopify-save-session.js — then add the output as GitHub secret SHOPIFY_STORAGE_STATE.'
-    );
+    throw new Error(storageStateHelp());
   }
 }
 

@@ -8,6 +8,8 @@
     "run": "node runner/index.js",
     "webhook": "node webhook/index.js",
     "verify": "node scripts/verify-setup.js",
+    "shopify:session": "node scripts/shopify-save-session.js",
+    "shopify:upload": "node scripts/shopify-upload-session.js",
     "test:zephyr": "node runner/zephyr.js"
   },
   "engines": {
