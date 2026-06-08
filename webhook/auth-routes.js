@@ -233,14 +233,11 @@ export function registerAuthRoutes(app, { triggerWorkflow }) {
         return res.json({ ready: true, alreadyStarted: true });
       }
 
-      const storageStateBase64 = await exportAuthStorageState(req.params.runId);
-      storeSession(req.params.runId, storageStateBase64);
-      savePersistedSession(storageStateBase64);
       updatePendingRun(req.params.runId, { status: 'running' });
 
       await notifySlack(
         `✓ Shopify login saved for \`${run.app}\` cycle \`${run.cycleId}\`.\n` +
-          `Tests are running on the *QA server* (Railway) — not GitHub Actions. Results will appear in this channel when done.\n` +
+          `Tests are starting on the *QA server* (Railway) — you should see progress updates below within ~30 seconds.\n` +
           `_Next time run the same command — no login needed until the session expires._`,
         run.slackChannel
       );
@@ -251,7 +248,14 @@ export function registerAuthRoutes(app, { triggerWorkflow }) {
         app: run.app,
         cycleId: run.cycleId,
         slackChannel: run.slackChannel,
-      }).catch((err) => console.error('Auth browser test run failed:', err));
+      }).catch(async (err) => {
+        console.error('Auth browser test run failed:', err);
+        await notifySlack(
+          `⚠️ Test run failed to start or crashed: ${err.message}\n` +
+            `Run \`/run-tests ${run.app} ${run.cycleId} login\` to try again.`,
+          run.slackChannel
+        );
+      });
 
       res.json({ ready: true, started: true });
     } catch (err) {

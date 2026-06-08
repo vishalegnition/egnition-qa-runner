@@ -104,13 +104,18 @@ export async function postRunProgress(text, slackChannel, updateTs) {
   const channel = slackChannel || process.env.SLACK_CHANNEL_ID;
   if (!channel || !process.env.SLACK_BOT_TOKEN) return updateTs ?? null;
 
-  const client = getClient();
-  if (updateTs) {
-    await client.chat.update({ channel, ts: updateTs, text });
-    return updateTs;
+  try {
+    const client = getClient();
+    if (updateTs) {
+      await client.chat.update({ channel, ts: updateTs, text });
+      return updateTs;
+    }
+    const msg = await client.chat.postMessage({ channel, text });
+    return msg.ts;
+  } catch (err) {
+    console.error('Slack progress post failed:', err.message);
+    return updateTs ?? null;
   }
-  const msg = await client.chat.postMessage({ channel, text });
-  return msg.ts;
 }
 
 /**

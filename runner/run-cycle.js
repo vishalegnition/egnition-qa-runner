@@ -81,6 +81,12 @@ export async function runCycle({
   const appConfig = loadAppConfig(appId);
   const channel = slackChannel || process.env.SLACK_CHANNEL_ID;
 
+  env('SLACK_BOT_TOKEN');
+  let progressTs = await postRunProgress(
+    `🏃 *${cycleId}* — fetching test cases from Zephyr…`,
+    channel
+  ).catch(() => null);
+
   env('ZEPHYR_API_TOKEN');
   const { testCases } = await fetchCycleWithTestCases(cycleId);
 
@@ -104,11 +110,11 @@ export async function runCycle({
       await assertReadyForTests(page, appConfig.store_url);
     }
 
-    env('SLACK_BOT_TOKEN');
-    let progressTs = await postRunProgress(
+    progressTs = await postRunProgress(
       `🏃 *${cycleId}* — loaded ${testCases.length} test cases, starting…`,
-      channel
-    );
+      channel,
+      progressTs
+    ).catch(() => progressTs);
 
     let sessionDead = false;
 
