@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { authenticator } from 'otplib';
 
 const HEADLESS = process.env.PLAYWRIGHT_HEADLESS === 'true';
 
@@ -21,6 +22,51 @@ export async function launchBrowser() {
   return { browser, context, page };
 }
 
+function generateTotpCode() {
+  const secret = process.env.SHOPIFY_2FA_SECRET?.replace(/\s+/g, '');
+  if (!secret) {
+    throw new Error('SHOPIFY_2FA_SECRET is required when Shopify prompts for 2FA');
+  }
+  return authenticator.generate(secret);
+}
+
+/**
+ * Handle Shopify TOTP 2FA if the verification step appears.
+ */
+async function handleTwoFactor(page) {
+  const codeInput = page
+    .getByLabel(/authentication code|verification code|authenticator|security code|2fa|two-factor/i)
+    .or(page.locator('input[name*="code" i]'))
+    .or(page.locator('input[autocomplete="one-time-code"]'))
+    .or(page.locator('input[inputmode="numeric"]'))
+    .or(page.locator('input[maxlength="6"]'));
+
+  const visible = await codeInput
+    .first()
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!visible) return;
+
+  const useAppBtn = page.getByRole('button', {
+    name: /authenticator app|authentication app|use.*app/i,
+  });
+  if (await useAppBtn.isVisible().catch(() => false)) {
+    await useAppBtn.click();
+    await codeInput.first().waitFor({ state: 'visible', timeout: 10000 });
+  }
+
+  const code = generateTotpCode();
+  await codeInput.first().fill(code);
+
+  await page
+    .getByRole('button', { name: /verify|continue|log in|sign in|submit/i })
+    .or(page.locator('button[type="submit"]'))
+    .first()
+    .click();
+}
+
 /**
  * Log in to Shopify admin for the given store URL.
  */
@@ -39,7 +85,6 @@ export async function loginToShopify(page, storeUrl) {
 
   await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-  // Shopify login — email field
   const emailInput = page
     .getByLabel(/email/i)
     .or(page.locator('input[name="account[email]"]'))
@@ -54,7 +99,6 @@ export async function loginToShopify(page, storeUrl) {
 
   await continueBtn.first().click();
 
-  // Password step (may appear on same or next page)
   const passwordInput = page
     .getByLabel(/password/i)
     .or(page.locator('input[name="account[password]"]'))
@@ -69,11 +113,11 @@ export async function loginToShopify(page, storeUrl) {
     .first()
     .click();
 
-  // Wait for admin shell (navigation or dashboard)
+  await handleTwoFactor(page);
+
   await page.waitForURL(/admin\.shopify\.com|\.myshopify\.com\/admin/, {
     timeout: 120000,
   }).catch(async () => {
-    // Some stores stay on custom domain admin
     await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
   });
 
@@ -83,7 +127,9 @@ export async function loginToShopify(page, storeUrl) {
     .catch(() => false);
 
   if (stillOnLogin) {
-    throw new Error('Shopify login failed — still on login page. Check credentials.');
+    throw new Error(
+      'Shopify login failed — still on login page. Check SHOPIFY_ADMIN_EMAIL, SHOPIFY_ADMIN_PASSWORD, and SHOPIFY_2FA_SECRET.'
+    );
   }
 }
 

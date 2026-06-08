@@ -27,6 +27,7 @@
 **You still need to add in GitHub → Settings → Secrets → Actions:**
 - [ ] `SHOPIFY_ADMIN_EMAIL`
 - [ ] `SHOPIFY_ADMIN_PASSWORD`
+- [ ] `SHOPIFY_2FA_SECRET` (TOTP secret — not a one-time code)
 - [ ] `ZEPHYR_API_TOKEN`
 - [ ] `ZEPHYR_PROJECT_KEY`
 - [ ] `OPENROUTER_API_KEY`

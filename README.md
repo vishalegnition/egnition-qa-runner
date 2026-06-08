@@ -28,7 +28,7 @@ See [SETUP_STATUS.md](SETUP_STATUS.md) for automated setup progress and remainin
 
 Configure in **Settings → Secrets and variables → Actions**:
 
-- `SHOPIFY_ADMIN_EMAIL`, `SHOPIFY_ADMIN_PASSWORD`
+- `SHOPIFY_ADMIN_EMAIL`, `SHOPIFY_ADMIN_PASSWORD`, `SHOPIFY_2FA_SECRET` (TOTP secret for 2FA — generates codes automatically)
 - `ZEPHYR_BASE_URL`, `ZEPHYR_API_TOKEN`, `ZEPHYR_PROJECT_KEY`
 - `OPENROUTER_API_KEY` (model is auto-selected from available Gemini vision models)
 - `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`

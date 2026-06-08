@@ -46,6 +46,7 @@ jobs:
           CYCLE_ID: ${{ inputs.cycle_id }}
           SHOPIFY_ADMIN_EMAIL: ${{ secrets.SHOPIFY_ADMIN_EMAIL }}
           SHOPIFY_ADMIN_PASSWORD: ${{ secrets.SHOPIFY_ADMIN_PASSWORD }}
+          SHOPIFY_2FA_SECRET: ${{ secrets.SHOPIFY_2FA_SECRET }}
           ZEPHYR_BASE_URL: ${{ secrets.ZEPHYR_BASE_URL }}
           ZEPHYR_API_TOKEN: ${{ secrets.ZEPHYR_API_TOKEN }}
           ZEPHYR_PROJECT_KEY: ${{ secrets.ZEPHYR_PROJECT_KEY }}

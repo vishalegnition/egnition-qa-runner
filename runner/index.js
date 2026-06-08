@@ -125,7 +125,7 @@ export async function main() {
       await loginToShopify(page, storeUrl);
     } catch (err) {
       await postError(
-        `Shopify login failed: ${err.message}. Check SHOPIFY_ADMIN_EMAIL and SHOPIFY_ADMIN_PASSWORD.`
+        `Shopify login failed: ${err.message}. Check SHOPIFY_ADMIN_EMAIL, SHOPIFY_ADMIN_PASSWORD, and SHOPIFY_2FA_SECRET.`
       );
       process.exit(1);
     }
