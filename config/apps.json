@@ -2,21 +2,25 @@
   "br": {
     "name": "BestSellers reSort",
     "store_url": "https://br-dev.myshopify.com",
-    "jira_project_key": "BR"
+    "jira_project_key": "BR",
+    "cookie_secret_name": "SHOPIFY_SESSION_COOKIES_BR"
   },
   "oosp": {
     "name": "StockIQ",
     "store_url": "https://stockiq-dev.myshopify.com",
-    "jira_project_key": "OOSP"
+    "jira_project_key": "OOSP",
+    "cookie_secret_name": "SHOPIFY_SESSION_COOKIES_SIQ"
   },
   "mssp": {
     "name": "Multi-Store Sync Power",
     "store_url": "https://mssp-dev.myshopify.com",
-    "jira_project_key": "MSSP"
+    "jira_project_key": "MSSP",
+    "cookie_secret_name": "SHOPIFY_SESSION_COOKIES_MSSP"
   },
   "ol": {
     "name": "Commetiq Order Limits",
     "store_url": "https://commetiq-dev.myshopify.com",
-    "jira_project_key": "OL"
+    "jira_project_key": "OL",
+    "cookie_secret_name": "SHOPIFY_SESSION_COOKIES_CMQ"
   }
 }

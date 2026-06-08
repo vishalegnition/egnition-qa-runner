@@ -1,9 +1,5 @@
 import crypto from 'crypto';
 import express from 'express';
-import { createPendingRun } from './pending-runs.js';
-import { registerAuthRoutes, publicBaseUrl } from './auth-routes.js';
-import { hasPersistedSession, loadPersistedSession } from '../session/persistent-session.js';
-import { runCycleLocally } from './run-cycle-local.js';
 
 const VALID_APPS = ['br', 'oosp', 'mssp', 'ol'];
 
@@ -56,7 +52,7 @@ function parseCommand(text) {
   return { ok: true, app, cycleId };
 }
 
-async function triggerGitHubWorkflow({ app, cycleId, authRunId }) {
+async function triggerGitHubWorkflow({ app, cycleId }) {
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_REPO_OWNER;
   const repo = process.env.GITHUB_REPO_NAME;
@@ -67,9 +63,6 @@ async function triggerGitHubWorkflow({ app, cycleId, authRunId }) {
 
   const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/run-tests.yml/dispatches`;
 
-  const inputs = { app, cycle_id: cycleId };
-  if (authRunId) inputs.auth_run_id = authRunId;
-
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -78,7 +71,10 @@ async function triggerGitHubWorkflow({ app, cycleId, authRunId }) {
       'X-GitHub-Api-Version': '2022-11-28',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ ref: 'main', inputs }),
+    body: JSON.stringify({
+      ref: 'main',
+      inputs: { app, cycle_id: cycleId },
+    }),
   });
 
   if (!res.ok) {
@@ -89,8 +85,6 @@ async function triggerGitHubWorkflow({ app, cycleId, authRunId }) {
 
 const app = express();
 const rawBodyParser = express.raw({ type: 'application/x-www-form-urlencoded' });
-
-registerAuthRoutes(app, { triggerWorkflow: triggerGitHubWorkflow });
 
 app.post('/trigger', rawBodyParser, async (req, res) => {
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
@@ -118,49 +112,29 @@ app.post('/trigger', rawBodyParser, async (req, res) => {
   }
 
   const { app: appName, cycleId } = parsed;
-  const slackChannel = params.get('channel_id');
-  const forceLogin = /\b(--login|login)\b/i.test(commandText);
 
-  if (!forceLogin && hasPersistedSession()) {
-    runCycleLocally({
-      app: appName,
-      cycleId,
-      storageStateBase64: loadPersistedSession(),
-      slackChannel,
-    });
+  try {
+    await triggerGitHubWorkflow({ app: appName, cycleId });
     res.json({
       response_type: 'in_channel',
       text:
-        `*${appName}* cycle *${cycleId}* — starting tests on the QA server (Railway) with saved login.\n` +
-        `_Not GitHub Actions. Results post here when done. Force re-login: \`/run-tests ${appName} ${cycleId} login\`_`,
+        `*${appName}* cycle *${cycleId}* — tests started on GitHub Actions.\n` +
+        `Progress and results will post in this channel.`,
     });
-    return;
+  } catch (err) {
+    console.error('trigger:', err);
+    res.json({
+      response_type: 'ephemeral',
+      text: `Failed to start tests: ${err.message}`,
+    });
   }
-
-  const runId = createPendingRun({
-    app: appName,
-    cycleId,
-    slackChannel,
-    slackUser: params.get('user_id'),
-  });
-
-  const authUrl = `${publicBaseUrl()}/auth/${runId}`;
-
-  res.json({
-    response_type: 'in_channel',
-    text:
-      `*${appName}* cycle *${cycleId}* — log in to Shopify once to start tests:\n` +
-      `<${authUrl}|Open login browser>\n` +
-      `_After this, future runs in this channel skip login until the session expires._`,
-  });
 });
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', auth: true });
+  res.json({ status: 'ok' });
 });
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Webhook + auth server on port ${port}`);
-  console.log(`Public URL: ${publicBaseUrl()}`);
+  console.log(`Webhook server on port ${port}`);
 });

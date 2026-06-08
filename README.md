@@ -34,9 +34,7 @@ See [SETUP_STATUS.md](SETUP_STATUS.md) for automated setup progress and remainin
 
 Configure in **Settings → Secrets and variables → Actions**:
 
-- `SHOPIFY_ADMIN_EMAIL`, `SHOPIFY_ADMIN_PASSWORD`, `SHOPIFY_2FA_SECRET`
-- `SHOPIFY_STORAGE_STATE` — **recommended**: you pass Cloudflare once via `npm run shopify:session`, then `npm run shopify:upload`
-- `CAPSOLVER_API_KEY` — **optional**: paid automated Cloudflare/Turnstile solver for fully unattended CI ([capsolver.com](https://www.capsolver.com))
+- `SHOPIFY_SESSION_COOKIES_BR`, `SHOPIFY_SESSION_COOKIES_SIQ`, `SHOPIFY_SESSION_COOKIES_MSSP`, `SHOPIFY_SESSION_COOKIES_CMQ` — Cookie-Editor JSON export per dev store (login once with "Remember me", refresh ~yearly)
 - `ZEPHYR_API_TOKEN` (Zephyr Scale Cloud API — cycles like `BR-R104`)
 - `OPENROUTER_API_KEY` (model is auto-selected from available Gemini vision models)
 - `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`

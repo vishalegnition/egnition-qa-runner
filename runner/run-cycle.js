@@ -2,10 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchCycleWithTestCases } from './zephyr.js';
-import { launchBrowser, loginToShopify, closeBrowser, assertReadyForTests } from './browser.js';
+import {
+  launchBrowser,
+  openShopifyAdminWithCookies,
+  closeBrowser,
+  assertReadyForTests,
+  buildSessionExpiredMessage,
+  isSessionExpired,
+} from './browser.js';
 import { runStepLoop } from './actions.js';
 import { postResults, postError, postRunProgress, screenshotPath } from './slack.js';
-import { clearPersistedSession } from '../session/persistent-session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,7 +32,7 @@ function env(name) {
   return v;
 }
 
-async function runTestCase(page, testCase, cycleId) {
+async function runTestCase(page, testCase, cycleId, appConfig) {
   const stepResults = [];
   let finalScreenshot = null;
   let failedReason = null;
@@ -61,22 +67,14 @@ async function runTestCase(page, testCase, cycleId) {
   };
 }
 
-function isLoginError(err) {
-  const msg = err?.message ?? '';
-  return /cloudflare|shopify login|session|log in|unauthorized|expired/i.test(msg);
+function isSessionError(msg = '') {
+  return /session expired|cookie|SHOPIFY_SESSION_COOKIES/i.test(msg);
 }
 
 /**
- * Run a Zephyr cycle. Pass an existing authenticated `page` to skip login (Slack auth handoff).
+ * Run a Zephyr test cycle with cookie-injected Shopify session.
  */
-export async function runCycle({
-  appId,
-  cycleId,
-  page: existingPage,
-  browser: existingBrowser,
-  slackChannel,
-  skipLogin = false,
-}) {
+export async function runCycle({ appId, cycleId, slackChannel }) {
   const startedAt = new Date();
   const appConfig = loadAppConfig(appId);
   const channel = slackChannel || process.env.SLACK_CHANNEL_ID;
@@ -90,25 +88,21 @@ export async function runCycle({
   env('ZEPHYR_API_TOKEN');
   const { testCases } = await fetchCycleWithTestCases(cycleId);
 
-  let browser = existingBrowser;
-  let page = existingPage;
-  let ownsBrowser = false;
+  let browser;
+  let context;
+  let page;
   const results = [];
 
   try {
-    if (!page) {
-      ownsBrowser = true;
-      const launched = await launchBrowser();
-      browser = launched.browser;
-      page = launched.page;
-      await loginToShopify(page, appConfig.store_url, {
-        hasStorageState: launched.hasStorageState,
-      });
-    } else if (!skipLogin) {
-      await loginToShopify(page, appConfig.store_url, { hasStorageState: true });
-    } else {
-      await assertReadyForTests(page, appConfig.store_url);
-    }
+    ({ browser, context, page } = await launchBrowser());
+
+    progressTs = await postRunProgress(
+      `🏃 *${cycleId}* — opening Shopify admin with session cookies…`,
+      channel,
+      progressTs
+    ).catch(() => progressTs);
+
+    await openShopifyAdminWithCookies(context, page, appConfig);
 
     progressTs = await postRunProgress(
       `🏃 *${cycleId}* — loaded ${testCases.length} test cases, starting…`,
@@ -139,10 +133,9 @@ export async function runCycle({
       }
 
       try {
-        await assertReadyForTests(page, appConfig.store_url);
+        await assertReadyForTests(page, appConfig);
       } catch (err) {
         sessionDead = true;
-        clearPersistedSession();
         await postError(err.message, channel);
         results.push({
           key: tc.key,
@@ -154,16 +147,13 @@ export async function runCycle({
       }
 
       console.log(`Running ${tc.key}: ${tc.name}`);
-      const result = await runTestCase(page, tc, cycleId);
+      const result = await runTestCase(page, tc, cycleId, appConfig);
       results.push(result);
       console.log(`  ${result.passed ? 'PASS' : 'FAIL'}: ${result.reason ?? 'ok'}`);
 
-      if (
-        !result.passed &&
-        /session expired|cloudflare|login page|not on shopify admin/i.test(result.reason ?? '')
-      ) {
+      if (!result.passed && isSessionExpired(page.url())) {
         sessionDead = true;
-        clearPersistedSession();
+        await postError(buildSessionExpiredMessage(appConfig), channel);
       }
 
       const passed = results.filter((r) => r.passed).length;
@@ -178,12 +168,8 @@ export async function runCycle({
     await postRunProgress(`✅ *${cycleId}* finished — posting full results…`, channel, progressTs);
   } catch (err) {
     console.error('Runner error:', err);
-    if (isLoginError(err)) {
-      clearPersistedSession();
-      await postError(
-        `${err.message}\n\n_Shopify session expired. Run \`/run-tests ${appId} ${cycleId}\` again — you'll get a login link in this channel._`,
-        channel
-      );
+    if (isSessionError(err.message)) {
+      await postError(err.message, channel);
     } else {
       await postError(`Runner crashed: ${err.message}`, channel);
     }
@@ -199,7 +185,7 @@ export async function runCycle({
     }
     throw err;
   } finally {
-    if (ownsBrowser) await closeBrowser(browser);
+    await closeBrowser(browser);
   }
 
   await postResults({

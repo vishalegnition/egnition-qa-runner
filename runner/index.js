@@ -1,6 +1,5 @@
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { fetchSlackAuthSession } from './fetch-auth-session.js';
 import { runCycle } from './run-cycle.js';
 import { parseModelResponse } from './vision.js';
 
@@ -16,15 +15,6 @@ async function main() {
     console.error('Usage: APP=<app> CYCLE_ID=<cycle> node runner/index.js');
     console.error('   or: node runner/index.js <app> <cycle-id>');
     process.exit(1);
-  }
-
-  const authRunId = process.env.AUTH_RUN_ID;
-  if (authRunId && !process.env.SHOPIFY_STORAGE_STATE) {
-    const session = await fetchSlackAuthSession(authRunId);
-    if (session) {
-      process.env.SHOPIFY_STORAGE_STATE = session;
-      console.log(`Loaded Shopify session from Slack auth run ${authRunId}`);
-    }
   }
 
   try {

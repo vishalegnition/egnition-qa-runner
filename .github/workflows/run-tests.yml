@@ -11,10 +11,6 @@ on:
         description: 'Zephyr test cycle key (e.g. BR-R104 for BestSellers reSort)'
         required: true
         type: string
-      auth_run_id:
-        description: 'Session ID from Slack login flow (set automatically)'
-        required: false
-        type: string
 
 jobs:
   run-tests:
@@ -48,14 +44,10 @@ jobs:
         env:
           APP: ${{ inputs.app }}
           CYCLE_ID: ${{ inputs.cycle_id }}
-          AUTH_RUN_ID: ${{ inputs.auth_run_id }}
-          QA_WEBHOOK_BASE_URL: https://qa-automation-production-9b20.up.railway.app
-          AUTH_FETCH_SECRET: ${{ secrets.AUTH_FETCH_SECRET }}
-          SHOPIFY_ADMIN_EMAIL: ${{ secrets.SHOPIFY_ADMIN_EMAIL }}
-          SHOPIFY_ADMIN_PASSWORD: ${{ secrets.SHOPIFY_ADMIN_PASSWORD }}
-          SHOPIFY_2FA_SECRET: ${{ secrets.SHOPIFY_2FA_SECRET }}
-          SHOPIFY_STORAGE_STATE: ${{ secrets.SHOPIFY_STORAGE_STATE }}
-          CAPSOLVER_API_KEY: ${{ secrets.CAPSOLVER_API_KEY }}
+          SHOPIFY_SESSION_COOKIES_BR: ${{ secrets.SHOPIFY_SESSION_COOKIES_BR }}
+          SHOPIFY_SESSION_COOKIES_SIQ: ${{ secrets.SHOPIFY_SESSION_COOKIES_SIQ }}
+          SHOPIFY_SESSION_COOKIES_MSSP: ${{ secrets.SHOPIFY_SESSION_COOKIES_MSSP }}
+          SHOPIFY_SESSION_COOKIES_CMQ: ${{ secrets.SHOPIFY_SESSION_COOKIES_CMQ }}
           ZEPHYR_API_TOKEN: ${{ secrets.ZEPHYR_API_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

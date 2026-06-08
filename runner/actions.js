@@ -66,13 +66,13 @@ export async function executeAction(page, actionObj) {
 /**
  * Run vision loop for a single Zephyr step (max 10 iterations).
  */
-export async function runStepLoop(page, getScreenshot, step, expectedResult) {
+export async function runStepLoop(page, getScreenshot, step, expectedResult, appConfig) {
   const { getNextAction } = await import('./vision.js');
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     let screenshot;
     try {
-      const block = await getSessionBlockReason(page);
+      const block = appConfig ? await getSessionBlockReason(page, appConfig) : null;
       if (block) {
         screenshot = await getScreenshot().catch(() => null);
         return { passed: false, reason: block, screenshot };
