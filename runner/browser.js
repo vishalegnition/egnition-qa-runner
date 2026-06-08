@@ -18,16 +18,14 @@ export function storeAdminUrl(storeUrl) {
   return base.includes('/admin') ? base : `${base}/admin`;
 }
 
-/** Load Cookie-Editor JSON from the env var named in apps.json `cookie_secret_name`. */
-export function loadSessionCookies(cookieSecretName) {
-  if (!cookieSecretName) {
-    throw new Error('App config missing cookie_secret_name in config/apps.json');
-  }
+const COOKIE_SECRET = 'SHOPIFY_SESSION_COOKIES';
 
-  const raw = process.env[cookieSecretName];
+/** Load Cookie-Editor JSON — one session for the shared dev store (all apps). */
+export function loadSessionCookies() {
+  const raw = process.env[COOKIE_SECRET];
   if (!raw?.trim()) {
     throw new Error(
-      `Missing GitHub secret ${cookieSecretName}. Export cookies from the dev store admin via Cookie-Editor.`
+      `Missing GitHub secret ${COOKIE_SECRET}. Log in to your dev store admin, export cookies via Cookie-Editor.`
     );
   }
 
@@ -40,7 +38,7 @@ export function loadSessionCookies(cookieSecretName) {
   } catch (err) {
     if (err.message?.includes('Cookie JSON')) throw err;
     throw new Error(
-      `Invalid JSON in ${cookieSecretName}. Export cookies via Cookie-Editor → Export as JSON.`
+      `Invalid JSON in ${COOKIE_SECRET}. Export cookies via Cookie-Editor → Export as JSON.`
     );
   }
 }
@@ -50,13 +48,11 @@ export function isSessionExpired(url) {
 }
 
 export function buildSessionExpiredMessage(appConfig) {
-  const secret = appConfig.cookie_secret_name ?? 'SHOPIFY_SESSION_COOKIES_*';
   const store = appConfig.store_url?.replace(/\/$/, '') ?? '[store]';
   return (
-    `Session expired for ${appConfig.name} dev store.\n` +
-    `Please refresh the cookies in GitHub Actions secrets.\n` +
-    `Secret name: ${secret}\n` +
-    `Steps: Log in to ${store}/admin with "Remember me" checked → export cookies via Cookie-Editor → paste into the secret.`
+    `Shopify session expired (shared dev store).\n` +
+    `Please refresh cookies in GitHub Actions secret: ${COOKIE_SECRET}\n` +
+    `Steps: Log in to ${store}/admin with "Remember me" checked → Cookie-Editor → Export as JSON → paste into the secret.`
   );
 }
 
@@ -97,7 +93,7 @@ export async function launchBrowser() {
  * Inject session cookies and open Shopify admin. Throws if session expired.
  */
 export async function openShopifyAdminWithCookies(context, page, appConfig) {
-  const cookies = loadSessionCookies(appConfig.cookie_secret_name);
+  const cookies = loadSessionCookies();
   await context.addCookies(cookies);
 
   const target = storeAdminUrl(appConfig.store_url);

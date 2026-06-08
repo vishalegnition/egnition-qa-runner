@@ -44,10 +44,7 @@ jobs:
         env:
           APP: ${{ inputs.app }}
           CYCLE_ID: ${{ inputs.cycle_id }}
-          SHOPIFY_SESSION_COOKIES_BR: ${{ secrets.SHOPIFY_SESSION_COOKIES_BR }}
-          SHOPIFY_SESSION_COOKIES_SIQ: ${{ secrets.SHOPIFY_SESSION_COOKIES_SIQ }}
-          SHOPIFY_SESSION_COOKIES_MSSP: ${{ secrets.SHOPIFY_SESSION_COOKIES_MSSP }}
-          SHOPIFY_SESSION_COOKIES_CMQ: ${{ secrets.SHOPIFY_SESSION_COOKIES_CMQ }}
+          SHOPIFY_SESSION_COOKIES: ${{ secrets.SHOPIFY_SESSION_COOKIES }}
           ZEPHYR_API_TOKEN: ${{ secrets.ZEPHYR_API_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

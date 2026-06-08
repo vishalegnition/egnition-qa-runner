@@ -34,14 +34,14 @@ See [SETUP_STATUS.md](SETUP_STATUS.md) for automated setup progress and remainin
 
 Configure in **Settings → Secrets and variables → Actions**:
 
-- `SHOPIFY_SESSION_COOKIES_BR`, `SHOPIFY_SESSION_COOKIES_SIQ`, `SHOPIFY_SESSION_COOKIES_MSSP`, `SHOPIFY_SESSION_COOKIES_CMQ` — Cookie-Editor JSON export per dev store (login once with "Remember me", refresh ~yearly)
+- `SHOPIFY_SESSION_COOKIES` — Cookie-Editor JSON from your shared dev store admin (one login for all apps; refresh ~yearly)
 - `ZEPHYR_API_TOKEN` (Zephyr Scale Cloud API — cycles like `BR-R104`)
 - `OPENROUTER_API_KEY` (model is auto-selected from available Gemini vision models)
 - `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`
 
 ### 2. App store URLs
 
-Edit `config/apps.json` with real Shopify dev store URLs before the first run.
+Edit `config/apps.json` with your real shared dev store URL on every app entry (all apps run in the same Shopify store).
 
 ### 3. Railway webhook
 
