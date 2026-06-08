@@ -131,8 +131,8 @@ app.post('/trigger', rawBodyParser, async (req, res) => {
     res.json({
       response_type: 'in_channel',
       text:
-        `*${appName}* cycle *${cycleId}* — starting tests with saved Shopify login.\n` +
-        `_Add \`login\` to force re-login: \`/run-tests ${appName} ${cycleId} login\`_`,
+        `*${appName}* cycle *${cycleId}* — starting tests on the QA server (Railway) with saved login.\n` +
+        `_Not GitHub Actions. Results post here when done. Force re-login: \`/run-tests ${appName} ${cycleId} login\`_`,
     });
     return;
   }

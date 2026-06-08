@@ -239,8 +239,9 @@ export function registerAuthRoutes(app, { triggerWorkflow }) {
       updatePendingRun(req.params.runId, { status: 'running' });
 
       await notifySlack(
-        `✓ Shopify login saved for \`${run.app}\` cycle \`${run.cycleId}\`. Tests are running…\n` +
-          `_You won't need to log in again until the session expires (usually weeks). Next time just run the same command._`,
+        `✓ Shopify login saved for \`${run.app}\` cycle \`${run.cycleId}\`.\n` +
+          `Tests are running on the *QA server* (Railway) — not GitHub Actions. Results will appear in this channel when done.\n` +
+          `_Next time run the same command — no login needed until the session expires._`,
         run.slackChannel
       );
 
