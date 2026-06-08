@@ -2,9 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchCycleWithTestCases } from './zephyr.js';
-import { launchBrowser, loginToShopify, closeBrowser } from './browser.js';
+import { launchBrowser, loginToShopify, closeBrowser, assertReadyForTests } from './browser.js';
 import { runStepLoop } from './actions.js';
-import { postResults, postError, screenshotPath } from './slack.js';
+import { postResults, postError, postRunProgress, screenshotPath } from './slack.js';
 import { clearPersistedSession } from '../session/persistent-session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -100,14 +100,76 @@ export async function runCycle({
       });
     } else if (!skipLogin) {
       await loginToShopify(page, appConfig.store_url, { hasStorageState: true });
+    } else {
+      await assertReadyForTests(page, appConfig.store_url);
     }
 
-    for (const tc of testCases) {
+    env('SLACK_BOT_TOKEN');
+    let progressTs = await postRunProgress(
+      `🏃 *${cycleId}* — loaded ${testCases.length} test cases, starting…`,
+      channel
+    );
+
+    let sessionDead = false;
+
+    for (let i = 0; i < testCases.length; i++) {
+      const tc = testCases[i];
+      const n = i + 1;
+
+      progressTs = await postRunProgress(
+        `🏃 *${cycleId}* — running *${tc.key}*: ${tc.name} (${n}/${testCases.length})`,
+        channel,
+        progressTs
+      );
+
+      if (sessionDead) {
+        results.push({
+          key: tc.key,
+          name: tc.name,
+          passed: false,
+          reason: 'Skipped — Shopify session expired earlier in this run',
+        });
+        continue;
+      }
+
+      try {
+        await assertReadyForTests(page, appConfig.store_url);
+      } catch (err) {
+        sessionDead = true;
+        clearPersistedSession();
+        await postError(err.message, channel);
+        results.push({
+          key: tc.key,
+          name: tc.name,
+          passed: false,
+          reason: err.message,
+        });
+        continue;
+      }
+
       console.log(`Running ${tc.key}: ${tc.name}`);
       const result = await runTestCase(page, tc, cycleId);
       results.push(result);
       console.log(`  ${result.passed ? 'PASS' : 'FAIL'}: ${result.reason ?? 'ok'}`);
+
+      if (
+        !result.passed &&
+        /session expired|cloudflare|login page|not on shopify admin/i.test(result.reason ?? '')
+      ) {
+        sessionDead = true;
+        clearPersistedSession();
+      }
+
+      const passed = results.filter((r) => r.passed).length;
+      const failed = results.length - passed;
+      progressTs = await postRunProgress(
+        `🏃 *${cycleId}* — *${tc.key}* ${result.passed ? '✅' : '❌'} (${n}/${testCases.length}) · ${passed} passed, ${failed} failed`,
+        channel,
+        progressTs
+      );
     }
+
+    await postRunProgress(`✅ *${cycleId}* finished — posting full results…`, channel, progressTs);
   } catch (err) {
     console.error('Runner error:', err);
     if (isLoginError(err)) {
@@ -134,7 +196,6 @@ export async function runCycle({
     if (ownsBrowser) await closeBrowser(browser);
   }
 
-  env('SLACK_BOT_TOKEN');
   await postResults({
     appName: appConfig.name,
     cycleId,

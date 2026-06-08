@@ -13,7 +13,11 @@ Respond ONLY in JSON with one of the following formats:
   { "action": "assert", "result": "PASS", "reason": "<what you observed>" }
   { "action": "assert", "result": "FAIL", "reason": "<what you observed>" }
 
-Never include any text outside the JSON object.`;
+Never include any text outside the JSON object.
+
+If the screenshot shows Cloudflare, a CAPTCHA, or a Shopify login page (not the admin app),
+respond with: { "action": "assert", "result": "FAIL", "reason": "Session expired or blocked — not on Shopify admin" }
+Do NOT try to click "Verify you are human" or Cloudflare checkboxes.`;
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODELS_URL = 'https://openrouter.ai/api/v1/models';

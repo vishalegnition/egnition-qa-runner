@@ -41,7 +41,9 @@ export function buildReport({
     const icon = r.passed ? '✅' : '❌';
     body += `${icon} ${r.key}: ${r.name}\n`;
     if (!r.passed && r.reason) {
-      body += `   Reason: ${r.reason}\n`;
+      const short =
+        r.reason.length > 220 ? `${r.reason.slice(0, 220).trim()}…` : r.reason;
+      body += `   Reason: ${short}\n`;
       if (r.screenshotPath) {
         body += `   Screenshot: [attached]\n`;
       }
@@ -92,6 +94,23 @@ export async function postResults({
   }
 
   return { threadTs, channel };
+}
+
+/**
+ * Post or update a short live-progress message during a test run.
+ * Pass `updateTs` to edit the same message instead of spamming the channel.
+ */
+export async function postRunProgress(text, slackChannel, updateTs) {
+  const channel = slackChannel || process.env.SLACK_CHANNEL_ID;
+  if (!channel || !process.env.SLACK_BOT_TOKEN) return updateTs ?? null;
+
+  const client = getClient();
+  if (updateTs) {
+    await client.chat.update({ channel, ts: updateTs, text });
+    return updateTs;
+  }
+  const msg = await client.chat.postMessage({ channel, text });
+  return msg.ts;
 }
 
 /**

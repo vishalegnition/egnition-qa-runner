@@ -2,6 +2,8 @@
  * Execute vision model actions via Playwright.
  */
 
+import { getSessionBlockReason } from './browser.js';
+
 const MAX_ITERATIONS = 10;
 
 function locatorForTarget(page, target) {
@@ -70,6 +72,12 @@ export async function runStepLoop(page, getScreenshot, step, expectedResult) {
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     let screenshot;
     try {
+      const block = await getSessionBlockReason(page);
+      if (block) {
+        screenshot = await getScreenshot().catch(() => null);
+        return { passed: false, reason: block, screenshot };
+      }
+
       screenshot = await getScreenshot();
       const actionObj = await getNextAction(screenshot, step.step, expectedResult);
 

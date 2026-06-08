@@ -54,7 +54,11 @@ function passwordInput(page) {
 async function isCloudflarePage(page) {
   const title = await page.title().catch(() => '');
   const url = page.url();
-  if (/just a moment|verifying your connection|attention required|something went wrong/i.test(title)) {
+  if (
+    /just a moment|verifying your connection|attention required|something went wrong|needs to be verified/i.test(
+      title
+    )
+  ) {
     return true;
   }
   if (url.includes('__cf_chl') || url.includes('challenges.cloudflare.com')) {
@@ -299,4 +303,42 @@ export async function closeBrowser(browser) {
   if (browser) {
     await browser.close().catch(() => {});
   }
+}
+
+function storeAdminUrl(storeUrl) {
+  const handle = storeHandleFromUrl(storeUrl);
+  if (handle) return `https://admin.shopify.com/store/${handle}`;
+  const base = storeUrl.replace(/\/$/, '');
+  return base.includes('/admin') ? base : `${base}/admin`;
+}
+
+/** Human-readable reason if the page is not ready for test steps. */
+export async function getSessionBlockReason(page) {
+  const url = page.url();
+  if (/no_cookie_session|accounts\.shopify\.com/i.test(url)) {
+    return 'Shopify session expired (redirected to login). Run `/run-tests` again in Slack to log in.';
+  }
+  if (await isCloudflarePage(page)) {
+    return 'Cloudflare verification page — cannot run tests. Run `/run-tests` again in Slack to log in.';
+  }
+  if (await isLoginReady(page)) {
+    return 'Shopify login page appeared — session expired. Run `/run-tests` again in Slack.';
+  }
+  if (!(await isAdminReady(page))) {
+    return `Not on Shopify admin (${url}). Session may have expired.`;
+  }
+  return null;
+}
+
+/** Ensure we are on store admin before running tests; throws if session is gone. */
+export async function assertReadyForTests(page, storeUrl) {
+  let reason = await getSessionBlockReason(page);
+  if (!reason) return;
+
+  await page
+    .goto(storeAdminUrl(storeUrl), { waitUntil: 'domcontentloaded', timeout: 60000 })
+    .catch(() => {});
+
+  reason = await getSessionBlockReason(page);
+  if (reason) throw new Error(reason);
 }
