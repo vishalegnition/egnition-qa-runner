@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import express from 'express';
 import { createPendingRun } from './pending-runs.js';
 import { registerAuthRoutes, publicBaseUrl } from './auth-routes.js';
+import { hasPersistedSession, loadPersistedSession } from '../session/persistent-session.js';
+import { runCycleLocally } from './run-cycle-local.js';
 
 const VALID_APPS = ['br', 'oosp', 'mssp', 'ol'];
 
@@ -116,10 +118,29 @@ app.post('/trigger', rawBodyParser, async (req, res) => {
   }
 
   const { app: appName, cycleId } = parsed;
+  const slackChannel = params.get('channel_id');
+  const forceLogin = /\b(--login|login)\b/i.test(commandText);
+
+  if (!forceLogin && hasPersistedSession()) {
+    runCycleLocally({
+      app: appName,
+      cycleId,
+      storageStateBase64: loadPersistedSession(),
+      slackChannel,
+    });
+    res.json({
+      response_type: 'in_channel',
+      text:
+        `*${appName}* cycle *${cycleId}* — starting tests with saved Shopify login.\n` +
+        `_Add \`login\` to force re-login: \`/run-tests ${appName} ${cycleId} login\`_`,
+    });
+    return;
+  }
+
   const runId = createPendingRun({
     app: appName,
     cycleId,
-    slackChannel: params.get('channel_id'),
+    slackChannel,
     slackUser: params.get('user_id'),
   });
 
@@ -128,8 +149,9 @@ app.post('/trigger', rawBodyParser, async (req, res) => {
   res.json({
     response_type: 'in_channel',
     text:
-      `*${appName}* cycle *${cycleId}* — log in to Shopify to start tests:\n` +
-      `<${authUrl}|Open login browser> (works on phone or laptop — pass Cloudflare here, then tests run automatically)`,
+      `*${appName}* cycle *${cycleId}* — log in to Shopify once to start tests:\n` +
+      `<${authUrl}|Open login browser>\n` +
+      `_After this, future runs in this channel skip login until the session expires._`,
   });
 });
 

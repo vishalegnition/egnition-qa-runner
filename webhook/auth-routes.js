@@ -19,7 +19,8 @@ import {
   stopAuthBrowser,
   solveAuthCloudflare,
 } from './auth-browser.js';
-import { runCycleLocally } from './run-cycle-local.js';
+import { runCycleOnAuthBrowser } from './run-cycle-auth.js';
+import { savePersistedSession } from '../session/persistent-session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -234,33 +235,22 @@ export function registerAuthRoutes(app, { triggerWorkflow }) {
 
       const storageStateBase64 = await exportAuthStorageState(req.params.runId);
       storeSession(req.params.runId, storageStateBase64);
+      savePersistedSession(storageStateBase64);
       updatePendingRun(req.params.runId, { status: 'running' });
 
-      await stopAuthBrowser(req.params.runId);
+      await notifySlack(
+        `✓ Shopify login saved for \`${run.app}\` cycle \`${run.cycleId}\`. Tests are running…\n` +
+          `_You won't need to log in again until the session expires (usually weeks). Next time just run the same command._`,
+        run.slackChannel
+      );
 
-      // Run on Railway (same IP as login). GHA datacenter IPs re-trigger Cloudflare.
-      const useGha = process.env.RUN_TESTS_ON_GHA === 'true';
-      if (useGha) {
-        await triggerWorkflow({
-          app: run.app,
-          cycleId: run.cycleId,
-          authRunId: req.params.runId,
-        });
-        await notifySlack(
-          `✓ Shopify login saved for \`${run.app}\` cycle \`${run.cycleId}\`. Tests starting on GitHub Actions…`,
-          run.slackChannel
-        );
-      } else {
-        runCycleLocally({
-          app: run.app,
-          cycleId: run.cycleId,
-          storageStateBase64,
-        });
-        await notifySlack(
-          `✓ Shopify login complete for \`${run.app}\` cycle \`${run.cycleId}\`. Tests are running on the QA server…`,
-          run.slackChannel
-        );
-      }
+      // Reuse the same browser — do not close it before tests (avoids Cloudflare re-challenge).
+      runCycleOnAuthBrowser({
+        runId: req.params.runId,
+        app: run.app,
+        cycleId: run.cycleId,
+        slackChannel: run.slackChannel,
+      }).catch((err) => console.error('Auth browser test run failed:', err));
 
       res.json({ ready: true, started: true });
     } catch (err) {

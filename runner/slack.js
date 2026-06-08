@@ -61,8 +61,9 @@ export async function postResults({
   startedAt,
   durationMs,
   results,
+  slackChannel,
 }) {
-  const channel = process.env.SLACK_CHANNEL_ID;
+  const channel = slackChannel || process.env.SLACK_CHANNEL_ID;
   if (!channel) throw new Error('SLACK_CHANNEL_ID is required');
 
   const client = getClient();
@@ -96,8 +97,8 @@ export async function postResults({
 /**
  * Post a simple error message to the QA channel.
  */
-export async function postError(message) {
-  const channel = process.env.SLACK_CHANNEL_ID;
+export async function postError(message, slackChannel) {
+  const channel = slackChannel || process.env.SLACK_CHANNEL_ID;
   if (!channel) {
     console.error('Slack error (no channel):', message);
     return;

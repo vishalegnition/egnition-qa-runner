@@ -1,6 +1,7 @@
 node_modules/
 screenshots/
 shopify-storage-state.json
+data/
 .env
 *.log
 .DS_Store

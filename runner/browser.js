@@ -126,13 +126,19 @@ async function waitPastCloudflare(page, label = 'page') {
   const hasCapsolver = Boolean(process.env.CAPSOLVER_API_KEY);
   const hasSession = Boolean(process.env.SHOPIFY_STORAGE_STATE?.trim());
 
+  if (process.env.RAILWAY_LOCAL_SESSION === '1') {
+    throw new Error(
+      'Saved Shopify session expired or was blocked by Cloudflare. Run `/run-tests` again in Slack — you will get a login link in this channel.'
+    );
+  }
+
   let msg =
     'Cloudflare blocked Shopify login. A human must solve it once, or use an automated solver.\n\n' +
-    'Option A (free): npm run shopify:session — you click through Cloudflare in the browser, then npm run shopify:upload\n' +
-    'Option B (automated): add CAPSOLVER_API_KEY to GitHub secrets (paid Turnstile solver)';
+    'Option A (free): log in via Slack `/run-tests` link once — session is saved for weeks\n' +
+    'Option B (automated): add CAPSOLVER_API_KEY (paid Turnstile solver)';
 
   if (!hasSession && !hasCapsolver) {
-    msg += '\n\nNeither SHOPIFY_STORAGE_STATE nor CAPSOLVER_API_KEY is configured.';
+    msg += '\n\nNo saved session and no CAPSOLVER_API_KEY configured.';
   }
 
   throw new Error(msg);
