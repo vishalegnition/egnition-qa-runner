@@ -20,6 +20,52 @@ export function storeAdminUrl(storeUrl) {
 
 const COOKIE_SECRET = 'SHOPIFY_SESSION_COOKIES';
 
+const SAME_SITE_MAP = {
+  strict: 'Strict',
+  lax: 'Lax',
+  none: 'None',
+  no_restriction: 'None',
+  unspecified: 'Lax',
+  '': 'Lax',
+};
+
+/** Cookie-Editor / browser exports use values Playwright rejects — normalize first. */
+export function normalizeCookiesForPlaywright(rawCookies) {
+  return rawCookies
+    .map((c) => {
+      const name = c.name;
+      const value = c.value ?? '';
+      const domain = c.domain;
+      if (!name || !domain) return null;
+
+      const path = c.path || '/';
+      const sameSiteKey = String(c.sameSite ?? '').toLowerCase();
+      const sameSite = SAME_SITE_MAP[sameSiteKey] ?? 'Lax';
+
+      const out = {
+        name,
+        value,
+        domain,
+        path,
+        sameSite,
+        httpOnly: Boolean(c.httpOnly),
+        secure: Boolean(c.secure),
+      };
+
+      if (c.session) {
+        // Session cookie — omit expires
+      } else {
+        const exp = c.expires ?? c.expirationDate;
+        if (typeof exp === 'number' && exp > 0) {
+          out.expires = exp > 1e12 ? Math.floor(exp / 1000) : Math.floor(exp);
+        }
+      }
+
+      return out;
+    })
+    .filter(Boolean);
+}
+
 /** Load Cookie-Editor JSON — one session for the shared dev store (all apps). */
 export function loadSessionCookies() {
   const raw = process.env[COOKIE_SECRET];
@@ -34,7 +80,11 @@ export function loadSessionCookies() {
     if (!Array.isArray(cookies) || cookies.length === 0) {
       throw new Error('Cookie JSON must be a non-empty array');
     }
-    return cookies;
+    const normalized = normalizeCookiesForPlaywright(cookies);
+    if (normalized.length === 0) {
+      throw new Error('No valid cookies after normalization — check Cookie-Editor export');
+    }
+    return normalized;
   } catch (err) {
     if (err.message?.includes('Cookie JSON')) throw err;
     throw new Error(
