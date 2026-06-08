@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node webhook/index.js",
+    "start:webhook": "node webhook/index.js",
     "run": "node runner/index.js",
     "webhook": "node webhook/index.js",
     "verify": "node scripts/verify-setup.js",
