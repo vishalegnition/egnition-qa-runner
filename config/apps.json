@@ -1,22 +1,22 @@
 {
   "br": {
     "name": "BestSellers reSort",
-    "store_url": "https://br-dev.myshopify.com",
+    "store_url": "https://dailyshop-fuehd07p.myshopify.com",
     "jira_project_key": "BR"
   },
   "oosp": {
     "name": "StockIQ",
-    "store_url": "https://stockiq-dev.myshopify.com",
+    "store_url": "https://dailyshop-fuehd07p.myshopify.com",
     "jira_project_key": "OOSP"
   },
   "mssp": {
     "name": "Multi-Store Sync Power",
-    "store_url": "https://mssp-dev.myshopify.com",
+    "store_url": "https://dailyshop-fuehd07p.myshopify.com",
     "jira_project_key": "MSSP"
   },
   "ol": {
     "name": "Commetiq Order Limits",
-    "store_url": "https://commetiq-dev.myshopify.com",
+    "store_url": "https://dailyshop-fuehd07p.myshopify.com",
     "jira_project_key": "OL"
   }
 }
