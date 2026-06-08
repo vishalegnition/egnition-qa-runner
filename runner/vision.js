@@ -16,6 +16,76 @@ Respond ONLY in JSON with one of the following formats:
 Never include any text outside the JSON object.`;
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const MODELS_URL = 'https://openrouter.ai/api/v1/models';
+const FALLBACK_MODEL = 'google/gemini-2.0-flash-exp';
+
+let cachedModel = null;
+
+/**
+ * Score Gemini vision models — higher is better.
+ * Prefers newer flash models (fast + strong for screenshot QA).
+ */
+export function pickBestGeminiVisionModel(models) {
+  const candidates = (models ?? [])
+    .map((m) => ({ model: m, score: scoreGeminiVisionModel(m) }))
+    .filter((c) => c.score >= 0)
+    .sort((a, b) => b.score - a.score);
+
+  return candidates[0]?.model?.id ?? null;
+}
+
+function scoreGeminiVisionModel(model) {
+  const id = model.id ?? '';
+  if (!id.startsWith('google/gemini')) return -1;
+
+  const inputs = model.architecture?.input_modalities ?? [];
+  if (!inputs.includes('image')) return -1;
+  if (model.expiration_date) return -1;
+
+  let score = 0;
+
+  // Flash models are preferred for QA automation (speed + cost).
+  if (/\bflash\b/i.test(id) || id.includes('flash-')) score += 200;
+  else if (/\bpro\b/i.test(id)) score += 120;
+
+  const version = id.match(/gemini-(\d+)\.(\d+)/);
+  if (version) {
+    score += Number(version[1]) * 20 + Number(version[2]) * 5;
+  }
+
+  // Slight preference for stable over preview/experimental when scores tie.
+  if (id.includes('preview') || id.includes('-exp')) score -= 8;
+
+  score += (model.created ?? 0) / 1e10;
+
+  return score;
+}
+
+async function resolveModel(apiKey) {
+  if (process.env.OPENROUTER_MODEL) {
+    return process.env.OPENROUTER_MODEL;
+  }
+  if (cachedModel) return cachedModel;
+
+  try {
+    const res = await fetch(MODELS_URL, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+    });
+    if (!res.ok) {
+      throw new Error(`models API ${res.status}`);
+    }
+    const { data } = await res.json();
+    cachedModel = pickBestGeminiVisionModel(data) ?? FALLBACK_MODEL;
+    console.log(`Auto-selected OpenRouter model: ${cachedModel}`);
+  } catch (err) {
+    console.warn(
+      `Could not auto-select Gemini model (${err.message}); using ${FALLBACK_MODEL}`
+    );
+    cachedModel = FALLBACK_MODEL;
+  }
+
+  return cachedModel;
+}
 
 /**
  * Build user message with step context and screenshot.
@@ -58,11 +128,11 @@ export function parseModelResponse(raw) {
 
 async function callOpenRouter(messages) {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp';
-
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is required');
   }
+
+  const model = await resolveModel(apiKey);
 
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',

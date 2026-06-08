@@ -20,8 +20,9 @@
 ### 1. GitHub Actions secrets
 
 **Set on GitHub (auto):**
-- [x] `OPENROUTER_MODEL` → `google/gemini-2.0-flash-exp`
 - [x] `ZEPHYR_BASE_URL` → `https://egnition.atlassian.net`
+
+**No longer required:** `OPENROUTER_MODEL` — best Gemini vision model is auto-selected at runtime.
 
 **You still need to add in GitHub → Settings → Secrets → Actions:**
 - [ ] `SHOPIFY_ADMIN_EMAIL`

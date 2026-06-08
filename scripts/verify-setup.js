@@ -4,7 +4,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { parseModelResponse } from '../runner/vision.js';
+import { parseModelResponse, pickBestGeminiVisionModel } from '../runner/vision.js';
 import { buildReport } from '../runner/slack.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,6 +46,33 @@ try {
   ok('vision.parseModelResponse');
 } catch (e) {
   fail('vision.parseModelResponse', e);
+}
+
+// Gemini model auto-select ranking
+try {
+  const best = pickBestGeminiVisionModel([
+    {
+      id: 'google/gemini-flash-1.5',
+      created: 1,
+      architecture: { input_modalities: ['text', 'image'] },
+    },
+    {
+      id: 'google/gemini-2.0-flash-exp',
+      created: 2,
+      architecture: { input_modalities: ['text', 'image'] },
+    },
+    {
+      id: 'google/gemini-2.5-pro-preview',
+      created: 3,
+      architecture: { input_modalities: ['text', 'image'] },
+    },
+  ]);
+  if (best !== 'google/gemini-2.0-flash-exp') {
+    throw new Error(`expected gemini-2.0-flash-exp, got ${best}`);
+  }
+  ok('vision.pickBestGeminiVisionModel');
+} catch (e) {
+  fail('vision.pickBestGeminiVisionModel', e);
 }
 
 // slack report builder
