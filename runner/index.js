@@ -118,10 +118,11 @@ export async function main() {
   const results = [];
 
   try {
-    ({ browser, page } = await launchBrowser());
+    let hasStorageState;
+    ({ browser, page, hasStorageState } = await launchBrowser());
 
     try {
-      await loginToShopify(page, storeUrl);
+      await loginToShopify(page, storeUrl, { hasStorageState });
     } catch (err) {
       await postError(
         `Shopify login failed: ${err.message}. Check SHOPIFY_ADMIN_EMAIL, SHOPIFY_ADMIN_PASSWORD, and SHOPIFY_2FA_SECRET.`

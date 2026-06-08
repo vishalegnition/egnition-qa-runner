@@ -1,25 +1,84 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { chromium } from 'playwright';
 import { generate as generateTotp } from 'otplib';
 
 const HEADLESS = process.env.PLAYWRIGHT_HEADLESS === 'true';
 
+function storeHandleFromUrl(storeUrl) {
+  const url = storeUrl.replace(/\/$/, '');
+  const adminMatch = url.match(/admin\.shopify\.com\/store\/([^/?#]+)/i);
+  if (adminMatch) return adminMatch[1];
+  const myshopifyMatch = url.match(/https?:\/\/([^.]+)\.myshopify\.com/i);
+  if (myshopifyMatch) return myshopifyMatch[1];
+  return null;
+}
+
+function loadStorageState() {
+  const raw = process.env.SHOPIFY_STORAGE_STATE;
+  if (!raw?.trim()) return undefined;
+
+  try {
+    const json = Buffer.from(raw.trim(), 'base64').toString('utf8');
+    const state = JSON.parse(json);
+    const tmp = path.join(os.tmpdir(), `shopify-state-${Date.now()}.json`);
+    fs.writeFileSync(tmp, JSON.stringify(state));
+    return tmp;
+  } catch {
+    throw new Error(
+      'SHOPIFY_STORAGE_STATE is invalid. Regenerate with: node scripts/shopify-save-session.js'
+    );
+  }
+}
+
+async function detectCloudflare(page) {
+  const title = await page.title().catch(() => '');
+  const url = page.url();
+  if (
+    /just a moment|verifying your connection|attention required/i.test(title) ||
+    url.includes('__cf_chl') ||
+    url.includes('challenges.cloudflare.com')
+  ) {
+    return true;
+  }
+  const turnstile = await page.locator('input[name="cf-turnstile-response"]').count();
+  return turnstile > 0 && (await page.locator('input[type="email"], #account_email').count()) === 0;
+}
+
+async function throwIfCloudflare(page) {
+  if (await detectCloudflare(page)) {
+    throw new Error(
+      'Shopify blocked automated login (Cloudflare challenge). Save a browser session once with: node scripts/shopify-save-session.js — then add the output as GitHub secret SHOPIFY_STORAGE_STATE.'
+    );
+  }
+}
+
 /**
  * Launch headed Chromium (use Xvfb on CI: DISPLAY=:99).
  */
 export async function launchBrowser() {
+  const storageState = loadStorageState();
+
   const browser = await chromium.launch({
     headless: HEADLESS,
     channel: 'chromium',
-    args: HEADLESS ? [] : ['--no-sandbox', '--disable-setuid-sandbox'],
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      ...(HEADLESS ? [] : ['--no-sandbox', '--disable-setuid-sandbox']),
+    ],
   });
 
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     ignoreHTTPSErrors: true,
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    ...(storageState ? { storageState } : {}),
   });
 
   const page = await context.newPage();
-  return { browser, context, page };
+  return { browser, context, page, hasStorageState: Boolean(storageState) };
 }
 
 async function generateTotpCode() {
@@ -30,9 +89,23 @@ async function generateTotpCode() {
   return generateTotp({ secret });
 }
 
-/**
- * Handle Shopify TOTP 2FA if the verification step appears.
- */
+function emailInput(page) {
+  return page
+    .locator('input[type="email"]')
+    .or(page.getByLabel(/email/i))
+    .or(page.locator('input[name="account[email]"]'))
+    .or(page.locator('#account_email'))
+    .or(page.locator('input[name="email"]'));
+}
+
+function passwordInput(page) {
+  return page
+    .locator('input[type="password"]')
+    .or(page.getByLabel(/password/i))
+    .or(page.locator('input[name="account[password]"]'))
+    .or(page.locator('#account_password'));
+}
+
 async function handleTwoFactor(page) {
   const codeInput = page
     .getByLabel(/authentication code|verification code|authenticator|security code|2fa|two-factor/i)
@@ -67,45 +140,63 @@ async function handleTwoFactor(page) {
     .click();
 }
 
-/**
- * Log in to Shopify admin for the given store URL.
- */
-export async function loginToShopify(page, storeUrl) {
-  const email = process.env.SHOPIFY_ADMIN_EMAIL;
-  const password = process.env.SHOPIFY_ADMIN_PASSWORD;
+async function isAdminReady(page) {
+  const url = page.url();
+  return /admin\.shopify\.com\/store\//i.test(url) || /\.myshopify\.com\/admin/i.test(url);
+}
 
-  if (!email || !password) {
-    throw new Error('SHOPIFY_ADMIN_EMAIL and SHOPIFY_ADMIN_PASSWORD are required');
+async function openStoreAdmin(page, storeUrl) {
+  const handle = storeHandleFromUrl(storeUrl);
+  const target = handle
+    ? `https://admin.shopify.com/store/${handle}`
+    : storeUrl.replace(/\/$/, '').includes('/admin')
+      ? storeUrl
+      : `${storeUrl.replace(/\/$/, '')}/admin`;
+
+  await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.waitForTimeout(2000);
+  await throwIfCloudflare(page);
+}
+
+async function loginWithCredentials(page, email, password) {
+  const loginUrls = [
+    'https://accounts.shopify.com/lookup',
+    'https://admin.shopify.com/login',
+  ];
+
+  let onLoginPage = false;
+  for (const loginUrl of loginUrls) {
+    await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.waitForTimeout(2000);
+    await throwIfCloudflare(page);
+
+    const emailVisible = await emailInput(page)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (emailVisible) {
+      onLoginPage = true;
+      break;
+    }
   }
 
-  const base = storeUrl.replace(/\/$/, '');
-  const adminUrl = base.includes('/admin')
-    ? base
-    : `${base}/admin`;
+  if (!onLoginPage) {
+    await throwIfCloudflare(page);
+    throw new Error(
+      'Could not find Shopify email field. Cloudflare may be blocking CI login — set SHOPIFY_STORAGE_STATE (see scripts/shopify-save-session.js).'
+    );
+  }
 
-  await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await emailInput(page).first().fill(email);
 
-  const emailInput = page
-    .getByLabel(/email/i)
-    .or(page.locator('input[name="account[email]"]'))
-    .or(page.locator('#account_email'));
+  await page
+    .getByRole('button', { name: /continue|next|log in|sign in/i })
+    .or(page.locator('button[type="submit"]'))
+    .first()
+    .click();
 
-  await emailInput.first().waitFor({ state: 'visible', timeout: 30000 });
-  await emailInput.first().fill(email);
-
-  const continueBtn = page
-    .getByRole('button', { name: /continue|log in|sign in/i })
-    .or(page.locator('button[type="submit"]'));
-
-  await continueBtn.first().click();
-
-  const passwordInput = page
-    .getByLabel(/password/i)
-    .or(page.locator('input[name="account[password]"]'))
-    .or(page.locator('#account_password'));
-
-  await passwordInput.first().waitFor({ state: 'visible', timeout: 30000 });
-  await passwordInput.first().fill(password);
+  await passwordInput(page).first().waitFor({ state: 'visible', timeout: 45000 });
+  await passwordInput(page).first().fill(password);
 
   await page
     .getByRole('button', { name: /log in|sign in|continue/i })
@@ -115,20 +206,45 @@ export async function loginToShopify(page, storeUrl) {
 
   await handleTwoFactor(page);
 
-  await page.waitForURL(/admin\.shopify\.com|\.myshopify\.com\/admin/, {
+  await page.waitForURL(/admin\.shopify\.com|accounts\.shopify\.com|\.myshopify\.com/, {
     timeout: 120000,
-  }).catch(async () => {
-    await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
-  });
+  }).catch(() => {});
+}
 
-  const stillOnLogin = await page
-    .locator('input[name="account[email]"], #account_email')
-    .isVisible()
-    .catch(() => false);
+/**
+ * Log in to Shopify admin for the given store URL.
+ */
+export async function loginToShopify(page, storeUrl, { hasStorageState = false } = {}) {
+  await openStoreAdmin(page, storeUrl);
 
-  if (stillOnLogin) {
+  if (await isAdminReady(page)) {
+    const onLogin = await emailInput(page).first().isVisible().catch(() => false);
+    if (!onLogin) return;
+  }
+
+  if (hasStorageState) {
+    await page.waitForTimeout(3000);
+    if (await isAdminReady(page)) {
+      const onLogin = await emailInput(page).first().isVisible().catch(() => false);
+      if (!onLogin) return;
+    }
+  }
+
+  const email = process.env.SHOPIFY_ADMIN_EMAIL;
+  const password = process.env.SHOPIFY_ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error('SHOPIFY_ADMIN_EMAIL and SHOPIFY_ADMIN_PASSWORD are required');
+  }
+
+  await loginWithCredentials(page, email, password);
+  await openStoreAdmin(page, storeUrl);
+
+  const stillOnLogin = await emailInput(page).first().isVisible().catch(() => false);
+  if (stillOnLogin || !(await isAdminReady(page))) {
+    await throwIfCloudflare(page);
     throw new Error(
-      'Shopify login failed — still on login page. Check SHOPIFY_ADMIN_EMAIL, SHOPIFY_ADMIN_PASSWORD, and SHOPIFY_2FA_SECRET.'
+      'Shopify login failed. Check credentials/2FA, store URL in config/apps.json, or set SHOPIFY_STORAGE_STATE.'
     );
   }
 }
