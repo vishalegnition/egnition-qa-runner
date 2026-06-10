@@ -33,17 +33,37 @@ async function pollTask(taskId, maxWaitMs = 120000) {
 }
 
 async function extractTurnstileSitekey(page) {
-  return page.evaluate(() => {
+  for (const frame of page.frames()) {
+    const src = frame.url();
+    const m = src.match(/[?&]k=([^&]+)/);
+    if (m) return decodeURIComponent(m[1]);
+  }
+
+  const fromDom = await page.evaluate(() => {
     const withKey = document.querySelector('[data-sitekey]');
     if (withKey) return withKey.getAttribute('data-sitekey');
 
-    const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]');
+    const iframe = document.querySelector(
+      'iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]'
+    );
     if (iframe?.src) {
       const m = iframe.src.match(/[?&]k=([^&]+)/);
       if (m) return decodeURIComponent(m[1]);
     }
     return null;
   });
+  if (fromDom) return fromDom;
+
+  const html = await page.content();
+  for (const pattern of [
+    /data-sitekey=["']([^"']+)["']/i,
+    /sitekey["']?\s*[:=]\s*["']([^"']+)["']/i,
+    /turnstile\.render\([^)]*sitekey\s*:\s*["']([^"']+)["']/i,
+  ]) {
+    const m = html.match(pattern);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 async function injectTurnstileToken(page, token) {
@@ -98,17 +118,22 @@ export async function solveCloudflareChallenge(page) {
   const apiKey = process.env.CAPSOLVER_API_KEY;
   if (!apiKey) return false;
 
-  console.log('CapSolver: solving Cloudflare challenge...');
+  const proxy = process.env.CAPSOLVER_PROXY;
+  if (!proxy) {
+    console.warn(
+      'CapSolver: AntiCloudflareTask requires CAPSOLVER_PROXY (static residential proxy). Skipping challenge solve.'
+    );
+    return false;
+  }
+
+  console.log('CapSolver: solving Cloudflare challenge (with proxy)...');
   const task = {
     type: 'AntiCloudflareTask',
     websiteURL: page.url(),
     userAgent: await page.evaluate(() => navigator.userAgent),
+    html: await page.content(),
+    proxy,
   };
-
-  const proxy = process.env.CAPSOLVER_PROXY;
-  if (proxy) {
-    task.proxy = proxy;
-  }
 
   const { taskId } = await capsolverRequest('/createTask', {
     clientKey: apiKey,
@@ -116,25 +141,25 @@ export async function solveCloudflareChallenge(page) {
   });
 
   const solution = await pollTask(taskId, 180000);
-  if (!solution?.cookies) return false;
 
-  const cookies = Array.isArray(solution.cookies) ? solution.cookies : [];
-  if (solution.cf_clearance) {
-    cookies.push({
-      name: 'cf_clearance',
-      value: solution.cf_clearance,
-      domain: '.shopify.com',
-      path: '/',
-    });
+  const cookieMap =
+    solution?.cookies && typeof solution.cookies === 'object' ? solution.cookies : {};
+  const entries = Array.isArray(solution?.cookies)
+    ? solution.cookies
+    : Object.entries(cookieMap).map(([name, value]) => ({ name, value }));
+
+  if (solution?.cf_clearance) {
+    entries.push({ name: 'cf_clearance', value: solution.cf_clearance });
   }
 
-  if (cookies.length > 0) {
+  if (entries.length > 0) {
     await page.context().addCookies(
-      cookies.map((c) => ({
+      entries.map((c) => ({
         name: c.name,
         value: c.value,
         domain: c.domain || '.shopify.com',
         path: c.path || '/',
+        sameSite: 'Lax',
       }))
     );
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 });
@@ -142,7 +167,7 @@ export async function solveCloudflareChallenge(page) {
     return true;
   }
 
-  if (solution.token) {
+  if (solution?.token) {
     await injectTurnstileToken(page, solution.token);
     await page.waitForTimeout(3000);
     return true;

@@ -137,20 +137,16 @@ export function buildCloudflareBlockedMessage() {
   const hasCapsolver = Boolean(process.env.CAPSOLVER_API_KEY);
   const onRailway = process.env.RUN_ON_RAILWAY === '1';
 
-  let msg = onRailway
-    ? 'Cloudflare blocked the Railway browser (Verify you are human).\n\nFix options:\n'
-    : 'Cloudflare blocked the browser on GitHub Actions (datacenter IP).\n\nFix options:\n';
-
-  msg +=
-    '1. Re-export SHOPIFY_SESSION_COOKIES while logged in on the dev store admin\n' +
-    '2. Add CAPSOLVER_API_KEY for automated Turnstile solving';
-
-  if (!onRailway) {
-    msg += '\n3. Tests now run on Railway by default — use /run-tests in Slack (not GitHub Actions)';
-  }
+  let msg =
+    'Cloudflare blocked the browser (Verify you are human).\n\n' +
+    'CapSolver could not solve it. Fix options:\n' +
+    '1. Add CAPSOLVER_PROXY (static residential proxy) to GitHub secrets — required for Cloudflare Challenge pages\n' +
+    '2. Re-export SHOPIFY_SESSION_COOKIES from the dev store admin';
 
   if (!hasCapsolver) {
     msg += '\n\nCAPSOLVER_API_KEY is not configured.';
+  } else if (!process.env.CAPSOLVER_PROXY) {
+    msg += '\n\nCAPSOLVER_PROXY is not configured (required for full Cloudflare interstitial on CI).';
   }
   return msg;
 }
@@ -174,9 +170,22 @@ async function isAdminReady(page) {
 async function tryBypassCloudflare(page) {
   if (!process.env.CAPSOLVER_API_KEY) return false;
   console.log('Cloudflare detected — trying CapSolver...');
-  const solved =
-    (await solveTurnstileOnPage(page).catch(() => false)) ||
-    (await solveCloudflareChallenge(page).catch(() => false));
+
+  let solved = false;
+  try {
+    solved = await solveTurnstileOnPage(page);
+  } catch (err) {
+    console.warn('CapSolver Turnstile:', err.message);
+  }
+
+  if (!solved) {
+    try {
+      solved = await solveCloudflareChallenge(page);
+    } catch (err) {
+      console.warn('CapSolver Challenge:', err.message);
+    }
+  }
+
   if (solved) await page.waitForTimeout(3000);
   return solved;
 }
