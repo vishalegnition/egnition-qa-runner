@@ -15,6 +15,22 @@ function formatDuration(ms) {
   return `${m}m ${s}s`;
 }
 
+const SLACK_TEXT_LIMIT = 3900;
+
+export function summarizeResults(results) {
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.length - passed;
+  const rate = results.length ? Math.round((passed / results.length) * 100) : 0;
+  return { passed, failed, total: results.length, rate };
+}
+
+function shortenReason(reason, max = 120) {
+  const oneLine = String(reason ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max).trim()}…` : oneLine;
+}
+
 /**
  * Build the text report per spec Section 7.
  */
@@ -24,26 +40,20 @@ export function buildReport({
   startedAt,
   durationMs,
   results,
+  maxReasonLen = 120,
 }) {
-  const passed = results.filter((r) => r.passed).length;
-  const failed = results.length - passed;
-  const rate = results.length
-    ? Math.round((passed / results.length) * 100)
-    : 0;
-
+  const { passed, failed, total, rate } = summarizeResults(results);
   const startStr = startedAt.toISOString().slice(11, 16) + ' UTC';
 
   let body = `QA Run Complete — ${appName} | Cycle: ${cycleId}\n`;
   body += `Started: ${startStr} | Duration: ${formatDuration(durationMs)}\n\n`;
-  body += `Total: ${results.length}   Passed: ${passed}   Failed: ${failed}   Pass rate: ${rate}%\n\n`;
+  body += `Total: ${total}   Passed: ${passed}   Failed: ${failed}   Pass rate: ${rate}%\n\n`;
 
   for (const r of results) {
     const icon = r.passed ? '✅' : '❌';
     body += `${icon} ${r.key}: ${r.name}\n`;
     if (!r.passed && r.reason) {
-      const short =
-        r.reason.length > 220 ? `${r.reason.slice(0, 220).trim()}…` : r.reason;
-      body += `   Reason: ${short}\n`;
+      body += `   Reason: ${shortenReason(r.reason, maxReasonLen)}\n`;
       if (r.screenshotPath) {
         body += `   Screenshot: [attached]\n`;
       }
@@ -52,6 +62,30 @@ export function buildReport({
   }
 
   return body.trim();
+}
+
+/** Split a long report into Slack-safe chunks. */
+export function chunkReport(text, limit = SLACK_TEXT_LIMIT) {
+  if (text.length <= limit) return [text];
+
+  const chunks = [];
+  let rest = text;
+  while (rest.length > limit) {
+    let cut = rest.lastIndexOf('\n\n', limit);
+    if (cut < limit * 0.5) cut = limit;
+    chunks.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+export function buildProgressFinished(cycleId, results) {
+  const { passed, failed, total, rate } = summarizeResults(results);
+  const icon = failed === 0 ? '✅' : passed === 0 ? '❌' : '⚠️';
+  return (
+    `${icon} *${cycleId}* finished — ${passed}/${total} passed (${rate}%) · posting results…`
+  );
 }
 
 /**
@@ -70,13 +104,22 @@ export async function postResults({
 
   const client = getClient();
   const text = buildReport({ appName, cycleId, startedAt, durationMs, results });
+  const chunks = chunkReport(text);
 
   const summary = await client.chat.postMessage({
     channel,
-    text,
+    text: chunks[0],
   });
 
   const threadTs = summary.ts;
+
+  for (let i = 1; i < chunks.length; i++) {
+    await client.chat.postMessage({
+      channel,
+      thread_ts: threadTs,
+      text: chunks[i],
+    });
+  }
 
   for (const r of results) {
     if (!r.screenshotPath || !fs.existsSync(r.screenshotPath)) continue;

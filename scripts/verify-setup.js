@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { parseModelResponse, pickBestGeminiVisionModel } from '../runner/vision.js';
 import { targetCandidates } from '../runner/navigation.js';
-import { buildReport } from '../runner/slack.js';
+import { buildReport, chunkReport } from '../runner/slack.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
@@ -101,6 +101,22 @@ try {
     throw new Error('report format unexpected');
   }
   ok('slack.buildReport');
+
+  const long = buildReport({
+    appName: 'BestSellers reSort',
+    cycleId: 'BR-R104',
+    startedAt: new Date('2026-06-04T14:03:00Z'),
+    durationMs: 681000,
+    results: Array.from({ length: 30 }, (_, i) => ({
+      key: `BR-T${i + 1}`,
+      name: 'Test',
+      passed: false,
+      reason: 'locator.click: Timeout 15000ms exceeded. Call log: waiting for Apps menu',
+    })),
+  });
+  const chunks = chunkReport(long);
+  if (chunks.some((c) => c.length > 3900)) throw new Error('chunk too large');
+  ok('slack.chunkReport');
 } catch (e) {
   fail('slack.buildReport', e);
 }

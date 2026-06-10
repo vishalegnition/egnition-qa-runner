@@ -12,7 +12,13 @@ import {
 } from './browser.js';
 import { runStepLoop } from './actions.js';
 import { ensureAppContext } from './navigation.js';
-import { postResults, postError, postRunProgress, screenshotPath } from './slack.js';
+import {
+  postResults,
+  postError,
+  postRunProgress,
+  screenshotPath,
+  buildProgressFinished,
+} from './slack.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -196,7 +202,11 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
       );
     }
 
-    await postRunProgress(`✅ *${cycleId}* finished — posting full results…`, channel, progressTs);
+    progressTs = await postRunProgress(
+      buildProgressFinished(cycleId, results),
+      channel,
+      progressTs
+    );
   } catch (err) {
     console.error('Runner error:', err);
     if (isSessionError(err.message)) {
@@ -219,14 +229,22 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
     await closeBrowser(browser);
   }
 
-  await postResults({
-    appName: appConfig.name,
-    cycleId,
-    startedAt,
-    durationMs: Date.now() - startedAt.getTime(),
-    results,
-    slackChannel: channel,
-  });
+  try {
+    await postResults({
+      appName: appConfig.name,
+      cycleId,
+      startedAt,
+      durationMs: Date.now() - startedAt.getTime(),
+      results,
+      slackChannel: channel,
+    });
+  } catch (postErr) {
+    console.error('Failed to post Slack results:', postErr);
+    await postError(
+      `Run finished but Slack report failed: ${postErr.message}. Check Railway logs.`,
+      channel
+    );
+  }
 
   return results;
 }
