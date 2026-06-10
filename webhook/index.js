@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import express from 'express';
+import { runCycleOnRailway } from './run-cycle-local.js';
 
 const VALID_APPS = ['br', 'oosp', 'mssp', 'ol'];
 
@@ -83,6 +84,12 @@ async function triggerGitHubWorkflow({ app, cycleId }) {
   }
 }
 
+function authSecret(req) {
+  return req.headers.authorization?.replace(/^Bearer\s+/i, '');
+}
+
+const useGitHubActions = () => process.env.RUN_TESTS_ON_GITHUB === 'true';
+
 const app = express();
 const rawBodyParser = express.raw({ type: 'application/x-www-form-urlencoded' });
 
@@ -112,13 +119,25 @@ app.post('/trigger', rawBodyParser, async (req, res) => {
   }
 
   const { app: appName, cycleId } = parsed;
+  const slackChannel = params.get('channel_id');
 
   try {
-    await triggerGitHubWorkflow({ app: appName, cycleId });
+    if (useGitHubActions()) {
+      await triggerGitHubWorkflow({ app: appName, cycleId });
+      res.json({
+        response_type: 'in_channel',
+        text:
+          `*${appName}* cycle *${cycleId}* — tests started on GitHub Actions.\n` +
+          `Progress and results will post in this channel.`,
+      });
+      return;
+    }
+
+    runCycleOnRailway({ app: appName, cycleId, slackChannel });
     res.json({
       response_type: 'in_channel',
       text:
-        `*${appName}* cycle *${cycleId}* — tests started on GitHub Actions (CapSolver enabled).\n` +
+        `*${appName}* cycle *${cycleId}* — tests started on the *QA server* (Railway browser).\n` +
         `Progress and results will post in this channel.`,
     });
   } catch (err) {
@@ -130,11 +149,32 @@ app.post('/trigger', rawBodyParser, async (req, res) => {
   }
 });
 
+/** Internal trigger for smoke tests (Bearer AUTH_FETCH_SECRET). */
+app.post('/internal/run-test', express.json(), (req, res) => {
+  if (authSecret(req) !== process.env.AUTH_FETCH_SECRET) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  const appName = req.body?.app ?? 'br';
+  const cycleId = req.body?.cycle_id ?? 'BR-R104';
+  runCycleOnRailway({
+    app: appName,
+    cycleId,
+    slackChannel: process.env.SLACK_CHANNEL_ID,
+  });
+  res.json({ ok: true, app: appName, cycle_id: cycleId, runner: 'railway' });
+});
+
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', runner: 'github-actions' });
+  res.json({
+    status: 'ok',
+    runner: useGitHubActions() ? 'github-actions' : 'railway',
+    has_cookies: Boolean(process.env.SHOPIFY_SESSION_COOKIES?.trim()),
+    has_capsolver: Boolean(process.env.CAPSOLVER_API_KEY?.trim()),
+  });
 });
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Webhook server on port ${port} — dispatches to GitHub Actions`);
+  console.log(`Webhook + Railway browser runner on port ${port}`);
 });
