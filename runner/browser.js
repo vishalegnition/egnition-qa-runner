@@ -140,13 +140,13 @@ export function buildCloudflareBlockedMessage() {
   let msg =
     'Cloudflare blocked the browser (Verify you are human).\n\n' +
     'CapSolver could not solve it. Fix options:\n' +
-    '1. Add CAPSOLVER_PROXY (static residential proxy) to GitHub secrets — required for Cloudflare Challenge pages\n' +
-    '2. Re-export SHOPIFY_SESSION_COOKIES from the dev store admin';
+    '1. Add CAPSOLVER_PROXY (static residential proxy) to Railway + GitHub — required for full Cloudflare interstitial pages\n' +
+    '2. Re-export SHOPIFY_SESSION_COOKIES from https://dailyshop-fuehd07p.myshopify.com/admin after passing Cloudflare in your browser (include cf_clearance cookie)';
 
   if (!hasCapsolver) {
     msg += '\n\nCAPSOLVER_API_KEY is not configured.';
   } else if (!process.env.CAPSOLVER_PROXY) {
-    msg += '\n\nCAPSOLVER_PROXY is not configured (required for full Cloudflare interstitial on CI).';
+    msg += '\n\nCAPSOLVER_PROXY is not configured. Turnstile-only pages may still work; full interstitials need a proxy.';
   }
   return msg;
 }

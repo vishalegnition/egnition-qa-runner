@@ -89,8 +89,12 @@ export async function solveTurnstileOnPage(page) {
   const apiKey = process.env.CAPSOLVER_API_KEY;
   if (!apiKey) return false;
 
+  await page.waitForTimeout(2000);
   const sitekey = await extractTurnstileSitekey(page);
-  if (!sitekey) return false;
+  if (!sitekey) {
+    console.warn('CapSolver: no Turnstile sitekey found on page — may be a full Cloudflare interstitial');
+    return false;
+  }
 
   console.log('CapSolver: solving Turnstile...');
   const { taskId } = await capsolverRequest('/createTask', {
