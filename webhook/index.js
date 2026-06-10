@@ -168,9 +168,11 @@ app.post('/internal/run-test', express.json(), (req, res) => {
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
+    version: '5ee7f9b',
     runner: useGitHubActions() ? 'github-actions' : 'railway',
     has_cookies: Boolean(process.env.SHOPIFY_SESSION_COOKIES?.trim()),
     has_capsolver: Boolean(process.env.CAPSOLVER_API_KEY?.trim()),
+    has_proxy: Boolean(process.env.CAPSOLVER_PROXY?.trim()),
   });
 });
 
