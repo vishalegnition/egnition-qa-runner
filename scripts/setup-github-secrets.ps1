@@ -19,6 +19,7 @@ if (Test-Path $envFile) {
 
 $secrets = @(
   'SHOPIFY_SESSION_COOKIES',
+  'CAPSOLVER_API_KEY',
   'ZEPHYR_API_TOKEN',
   'OPENROUTER_API_KEY',
   'SLACK_BOT_TOKEN',

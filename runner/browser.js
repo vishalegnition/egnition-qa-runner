@@ -213,8 +213,10 @@ export async function openShopifyAdminWithCookies(context, page, appConfig) {
   await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForTimeout(2000);
 
-  if (await isCloudflarePage(page)) {
-    await tryBypassCloudflare(page);
+  for (let attempt = 0; attempt < 2 && (await isCloudflarePage(page)); attempt++) {
+    const solved = await tryBypassCloudflare(page);
+    if (!solved) break;
+    await page.waitForTimeout(2000);
   }
 
   if (await isCloudflarePage(page)) {
@@ -236,6 +238,8 @@ export async function closeBrowser(browser) {
 
 export async function getSessionBlockReason(page, appConfig) {
   if (await isCloudflarePage(page)) {
+    const solved = await tryBypassCloudflare(page);
+    if (solved && !(await isCloudflarePage(page))) return null;
     return buildCloudflareBlockedMessage();
   }
   const url = page.url();
