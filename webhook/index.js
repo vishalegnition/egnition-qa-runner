@@ -177,4 +177,8 @@ app.get('/health', (_req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Webhook + Railway browser runner on port ${port}`);
+  console.log(
+    `Env check: cookies=${Boolean(process.env.SHOPIFY_SESSION_COOKIES?.trim())} ` +
+      `capsolver=${Boolean(process.env.CAPSOLVER_API_KEY?.trim())}`
+  );
 });
