@@ -11,6 +11,7 @@ import {
   isSessionExpired,
 } from './browser.js';
 import { runStepLoop } from './actions.js';
+import { ensureAppContext } from './navigation.js';
 import { postResults, postError, postRunProgress, screenshotPath } from './slack.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,7 +42,13 @@ async function runTestCase(page, testCase, cycleId, appConfig) {
 
   for (const step of testCase.steps) {
     const stepText = [step.step, step.testData].filter(Boolean).join('\n');
-    const result = await runStepLoop(page, getScreenshot, { step: stepText }, step.expectedResult);
+    const result = await runStepLoop(
+      page,
+      getScreenshot,
+      { step: stepText },
+      step.expectedResult,
+      appConfig
+    );
 
     stepResults.push(result);
     if (result.screenshot) finalScreenshot = result.screenshot;
@@ -107,6 +114,14 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
     await openShopifyAdminWithCookies(context, page, appConfig);
 
     progressTs = await postRunProgress(
+      `🏃 *${cycleId}* — opening *${appConfig.name}* app…`,
+      channel,
+      progressTs
+    ).catch(() => progressTs);
+
+    await ensureAppContext(page, appConfig);
+
+    progressTs = await postRunProgress(
       `🏃 *${cycleId}* — loaded ${testCases.length} test cases, starting…`,
       channel,
       progressTs
@@ -149,6 +164,11 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
       }
 
       console.log(`Running ${tc.key}: ${tc.name}`);
+      try {
+        await ensureAppContext(page, appConfig);
+      } catch (navErr) {
+        console.warn(`App navigation warning: ${navErr.message}`);
+      }
       const result = await runTestCase(page, tc, cycleId, appConfig);
       results.push(result);
       console.log(`  ${result.passed ? 'PASS' : 'FAIL'}: ${result.reason ?? 'ok'}`);

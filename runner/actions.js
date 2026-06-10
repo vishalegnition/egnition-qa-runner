@@ -3,42 +3,38 @@
  */
 
 import { getSessionBlockReason } from './browser.js';
+import { findClickable, findFillable } from './navigation.js';
 
 const MAX_ITERATIONS = 10;
+const ACTION_TIMEOUT = 25000;
 
-function locatorForTarget(page, target) {
-  const t = String(target).trim();
-  return page
-    .getByRole('button', { name: new RegExp(t, 'i') })
-    .or(page.getByRole('link', { name: new RegExp(t, 'i') }))
-    .or(page.getByRole('textbox', { name: new RegExp(t, 'i') }))
-    .or(page.getByLabel(new RegExp(t, 'i')))
-    .or(page.getByText(new RegExp(t, 'i')))
-    .or(page.getByPlaceholder(new RegExp(t, 'i')))
-    .or(page.locator(`[aria-label*="${t.replace(/"/g, '\\"')}"]`))
-    .first();
-}
-
-export async function executeAction(page, actionObj) {
+export async function executeAction(page, actionObj, appConfig) {
   const { action } = actionObj;
 
   switch (action) {
     case 'click': {
-      const loc = locatorForTarget(page, actionObj.target);
-      await loc.click({ timeout: 15000 });
+      const loc = await findClickable(page, actionObj.target, appConfig);
+      if (!loc) {
+        throw new Error(`Element not found: ${actionObj.target}`);
+      }
+      await loc.click({ timeout: ACTION_TIMEOUT });
       break;
     }
     case 'fill': {
-      const loc = locatorForTarget(page, actionObj.target);
+      const loc = await findFillable(page, actionObj.target, appConfig);
+      if (!loc) {
+        throw new Error(`Field not found: ${actionObj.target}`);
+      }
       await loc.clear();
-      await loc.fill(actionObj.value ?? '');
+      await loc.fill(actionObj.value ?? '', { timeout: ACTION_TIMEOUT });
       break;
     }
     case 'navigate':
       await page.goto(actionObj.url, {
         waitUntil: 'domcontentloaded',
-        timeout: 60000,
+        timeout: 90000,
       });
+      await page.waitForTimeout(1500);
       break;
     case 'scroll':
       if (actionObj.direction === 'up') {
@@ -79,7 +75,12 @@ export async function runStepLoop(page, getScreenshot, step, expectedResult, app
       }
 
       screenshot = await getScreenshot();
-      const actionObj = await getNextAction(screenshot, step.step, expectedResult);
+      const actionObj = await getNextAction(
+        screenshot,
+        step.step,
+        expectedResult,
+        appConfig
+      );
 
       if (actionObj.action === 'assert') {
         return {
@@ -89,8 +90,8 @@ export async function runStepLoop(page, getScreenshot, step, expectedResult, app
         };
       }
 
-      await executeAction(page, actionObj);
-      await page.waitForTimeout(500);
+      await executeAction(page, actionObj, appConfig);
+      await page.waitForTimeout(800);
     } catch (err) {
       if (err.message?.includes('AI service unavailable')) {
         return {

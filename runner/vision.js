@@ -1,23 +1,35 @@
-const SYSTEM_PROMPT = `You are a Shopify QA automation agent. You are given a screenshot of a Shopify admin
-page or storefront and a test step written in plain English.
+function buildSystemPrompt(appConfig) {
+  const appName = appConfig?.name ?? 'the Shopify app';
+  const store = appConfig?.store_url ?? 'the dev store';
 
-Your job is to determine the next browser action to take to complete that step.
+  return `You are a Shopify QA automation agent testing "${appName}" on ${store}.
+You receive a screenshot of Shopify Admin (sidebar + main content; the app may be in an embedded iframe).
 
-Respond ONLY in JSON with one of the following formats:
+Determine the SINGLE next browser action to complete the test step.
 
-  { "action": "click", "target": "<description of element to click>" }
-  { "action": "fill", "target": "<field description>", "value": "<text to enter>" }
+Respond ONLY in JSON with one of these formats:
+
+  { "action": "click", "target": "<short visible label>" }
+  { "action": "fill", "target": "<short field label>", "value": "<text>" }
   { "action": "navigate", "url": "<full URL>" }
   { "action": "scroll", "direction": "down" }
   { "action": "wait", "seconds": 2 }
   { "action": "assert", "result": "PASS", "reason": "<what you observed>" }
   { "action": "assert", "result": "FAIL", "reason": "<what you observed>" }
 
+CRITICAL rules for "target":
+- Use SHORT labels exactly as shown on screen (2–4 words max): "Apps", "Products", "Collections", "${appName}", "Save", "Search"
+- NEVER use long phrases like "Apps menu item in the sidebar" or "Collections menu item under Products"
+- For sidebar nav, use: "Apps", "Products", "Collections", "Orders", "Settings"
+- To open the app under test, click "${appName}" (not other apps)
+- Prefer clicking visible button/link text over describing location
+
 Never include any text outside the JSON object.
 
-If the screenshot shows Cloudflare, a CAPTCHA, or a Shopify login page (not the admin app),
+If the screenshot shows Cloudflare, a CAPTCHA, or a Shopify login page (not admin),
 respond with: { "action": "assert", "result": "FAIL", "reason": "Session expired or blocked — not on Shopify admin" }
 Do NOT try to click "Verify you are human" or Cloudflare checkboxes.`;
+}
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODELS_URL = 'https://openrouter.ai/api/v1/models';
@@ -94,12 +106,12 @@ async function resolveModel(apiKey) {
 /**
  * Build user message with step context and screenshot.
  */
-function buildUserMessage(stepText, expectedResult, screenshotBase64) {
-  let text = `Test step:\n${stepText}`;
+function buildUserMessage(stepText, expectedResult, screenshotBase64, appConfig) {
+  let text = `App under test: ${appConfig?.name ?? 'unknown'}\n\nTest step:\n${stepText}`;
   if (expectedResult) {
     text += `\n\nExpected result:\n${expectedResult}`;
   }
-  text += '\n\nRespond with the next JSON action only.';
+  text += '\n\nRespond with the next JSON action only. Use short target labels.';
 
   return {
     role: 'user',
@@ -130,7 +142,7 @@ export function parseModelResponse(raw) {
   return JSON.parse(jsonStr.slice(start, end + 1));
 }
 
-async function callOpenRouter(messages) {
+async function callOpenRouter(messages, appConfig) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is required');
@@ -148,7 +160,7 @@ async function callOpenRouter(messages) {
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+      messages: [{ role: 'system', content: buildSystemPrompt(appConfig) }, ...messages],
       temperature: 0.1,
       max_tokens: 1024,
     }),
@@ -170,14 +182,14 @@ async function callOpenRouter(messages) {
 /**
  * Query vision model with screenshot + step. Retries once after 5s on failure.
  */
-export async function getNextAction(screenshotBuffer, stepText, expectedResult = '') {
+export async function getNextAction(screenshotBuffer, stepText, expectedResult = '', appConfig) {
   const base64 = screenshotBuffer.toString('base64');
-  const messages = [buildUserMessage(stepText, expectedResult, base64)];
+  const messages = [buildUserMessage(stepText, expectedResult, base64, appConfig)];
 
   let lastError;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const raw = await callOpenRouter(messages);
+      const raw = await callOpenRouter(messages, appConfig);
       try {
         return parseModelResponse(raw);
       } catch (parseErr) {

@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { parseModelResponse, pickBestGeminiVisionModel } from '../runner/vision.js';
+import { targetCandidates } from '../runner/navigation.js';
 import { buildReport } from '../runner/slack.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,15 @@ try {
   ok('config/apps.json');
 } catch (e) {
   fail('config/apps.json', e);
+}
+
+// navigation target shortening
+try {
+  const names = targetCandidates('Apps menu item in the sidebar', { name: 'BestSellers reSort' });
+  if (!names.includes('Apps')) throw new Error(`expected Apps in ${names}`);
+  ok('navigation.targetCandidates');
+} catch (e) {
+  fail('navigation.targetCandidates', e);
 }
 
 // vision JSON parser
