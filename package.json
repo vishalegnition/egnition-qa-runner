@@ -11,6 +11,8 @@
     "verify": "node scripts/verify-setup.js",
     "shopify:session": "node scripts/shopify-save-session.js",
     "shopify:upload": "node scripts/shopify-upload-session.js",
+    "shopify:export-cookies": "node scripts/export-shopify-cookies.js",
+    "shopify:upload-cookies": "node scripts/upload-shopify-cookies.js",
     "test:zephyr": "node runner/zephyr.js"
   },
   "engines": {

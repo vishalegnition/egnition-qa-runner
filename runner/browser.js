@@ -1,5 +1,6 @@
 import { chromium } from 'patchright';
 import { solveTurnstileOnPage, solveCloudflareChallenge } from './capsolver.js';
+import { getProxyConfig } from './proxy.js';
 
 const HEADLESS = process.env.PLAYWRIGHT_HEADLESS === 'true';
 
@@ -140,13 +141,14 @@ export function buildCloudflareBlockedMessage() {
   let msg =
     'Cloudflare blocked the browser (Verify you are human).\n\n' +
     'CapSolver could not solve it. Fix options:\n' +
-    '1. Add CAPSOLVER_PROXY (static residential proxy) to Railway + GitHub — required for full Cloudflare interstitial pages\n' +
-    '2. Re-export SHOPIFY_SESSION_COOKIES from https://dailyshop-fuehd07p.myshopify.com/admin after passing Cloudflare in your browser (include cf_clearance cookie)';
+    '1. Add CAPSOLVER_PROXY (sticky residential proxy, format host:port:user:pass) to Railway + GitHub — browser and CapSolver must share the same proxy IP\n' +
+    '2. Re-export SHOPIFY_SESSION_COOKIES: run `node scripts/export-shopify-cookies.js` on your PC after logging into the dev store admin';
 
   if (!hasCapsolver) {
     msg += '\n\nCAPSOLVER_API_KEY is not configured.';
   } else if (!process.env.CAPSOLVER_PROXY) {
-    msg += '\n\nCAPSOLVER_PROXY is not configured. Turnstile-only pages may still work; full interstitials need a proxy.';
+    msg +=
+      '\n\nCAPSOLVER_PROXY is not configured. Shopify shows a full Cloudflare interstitial on Railway — a sticky residential proxy is required (e.g. IPRoyal, Webshare, Bright Data).';
   }
   return msg;
 }
@@ -171,6 +173,12 @@ async function tryBypassCloudflare(page) {
   if (!process.env.CAPSOLVER_API_KEY) return false;
   console.log('Cloudflare detected — trying CapSolver...');
 
+  await page
+    .waitForSelector('iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]', {
+      timeout: 8000,
+    })
+    .catch(() => {});
+
   let solved = false;
   try {
     solved = await solveTurnstileOnPage(page);
@@ -186,11 +194,26 @@ async function tryBypassCloudflare(page) {
     }
   }
 
-  if (solved) await page.waitForTimeout(3000);
+  if (solved) {
+    await page.waitForTimeout(3000);
+    if (!(await isCloudflarePage(page))) {
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+    }
+  }
   return solved;
 }
 
 export async function launchBrowser() {
+  const proxy = getProxyConfig();
+  if (proxy) {
+    console.log(`Browser proxy: ${proxy.playwright.server}`);
+  } else if (process.env.CAPSOLVER_API_KEY) {
+    console.warn(
+      'CAPSOLVER_PROXY not set — full Cloudflare interstitials require a sticky residential proxy'
+    );
+  }
+
   const browser = await chromium.launch({
     headless: HEADLESS,
     channel: 'chrome',
@@ -202,6 +225,7 @@ export async function launchBrowser() {
     ignoreHTTPSErrors: true,
     locale: 'en-US',
     timezoneId: 'America/New_York',
+    ...(proxy ? { proxy: proxy.playwright } : {}),
   });
 
   const page = await context.newPage();

@@ -4,7 +4,20 @@
  * https://docs.capsolver.com/
  */
 
+import { getProxyConfig } from './proxy.js';
+
 const API = 'https://api.capsolver.com';
+
+function cookieDomainForPage(pageUrl) {
+  try {
+    const host = new URL(pageUrl).hostname;
+    if (host.endsWith('.myshopify.com')) return host;
+    if (host.includes('shopify.com')) return '.shopify.com';
+    return host;
+  } catch {
+    return '.shopify.com';
+  }
+}
 
 async function capsolverRequest(path, body) {
   const res = await fetch(`${API}${path}`, {
@@ -122,21 +135,24 @@ export async function solveCloudflareChallenge(page) {
   const apiKey = process.env.CAPSOLVER_API_KEY;
   if (!apiKey) return false;
 
-  const proxy = process.env.CAPSOLVER_PROXY;
-  if (!proxy) {
+  const proxyConfig = getProxyConfig();
+  if (!proxyConfig) {
     console.warn(
-      'CapSolver: AntiCloudflareTask requires CAPSOLVER_PROXY (static residential proxy). Skipping challenge solve.'
+      'CapSolver: AntiCloudflareTask requires CAPSOLVER_PROXY (sticky residential proxy). Skipping challenge solve.'
     );
     return false;
   }
 
-  console.log('CapSolver: solving Cloudflare challenge (with proxy)...');
+  const userAgent = await page.evaluate(() => navigator.userAgent);
+  const pageUrl = page.url();
+
+  console.log(`CapSolver: solving Cloudflare challenge via ${proxyConfig.playwright.server}...`);
   const task = {
     type: 'AntiCloudflareTask',
-    websiteURL: page.url(),
-    userAgent: await page.evaluate(() => navigator.userAgent),
+    websiteURL: pageUrl,
+    userAgent,
     html: await page.content(),
-    proxy,
+    proxy: proxyConfig.capsolver,
   };
 
   const { taskId } = await capsolverRequest('/createTask', {
@@ -156,19 +172,22 @@ export async function solveCloudflareChallenge(page) {
     entries.push({ name: 'cf_clearance', value: solution.cf_clearance });
   }
 
+  const cookieDomain = cookieDomainForPage(pageUrl);
+
   if (entries.length > 0) {
     await page.context().addCookies(
       entries.map((c) => ({
         name: c.name,
         value: c.value,
-        domain: c.domain || '.shopify.com',
+        domain: c.domain || cookieDomain,
         path: c.path || '/',
         sameSite: 'Lax',
+        secure: true,
       }))
     );
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 });
     await page.waitForTimeout(3000);
-    return true;
+    return !(await page.title().then((t) => /just a moment|verify you are human/i.test(t)));
   }
 
   if (solution?.token) {
