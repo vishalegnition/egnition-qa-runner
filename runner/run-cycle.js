@@ -127,7 +127,11 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
       progressTs
     ).catch(() => progressTs);
 
-    await ensureAppContext(page, appConfig);
+    try {
+      await ensureAppContext(page, appConfig);
+    } catch (err) {
+      console.warn(`Initial app navigation: ${err.message}`);
+    }
 
     progressTs = await postRunProgress(
       `🏃 *${cycleId}* — loaded ${testCases.length} test cases, starting…`,

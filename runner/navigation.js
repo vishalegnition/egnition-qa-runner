@@ -112,35 +112,84 @@ export async function findFillable(page, target, appConfig) {
   return null;
 }
 
+const APP_NAME_ALIASES = {
+  'BestSellers reSort': [/bestsellers?\s*resort/i, /bestsellers?/i, /\bresort\b/i],
+  StockIQ: [/stockiq/i, /stock\s*iq/i],
+  'Multi-Store Sync Power': [/multi-?store/i, /\bmssp\b/i],
+  'Commetiq Order Limits': [/commetiq/i, /order\s*limits/i],
+};
+
+function storeHandleFromUrl(storeUrl) {
+  const m = storeUrl.match(/https?:\/\/([^.]+)\.myshopify\.com/i);
+  return m?.[1] ?? null;
+}
+
+async function clickAppLink(page, patterns) {
+  for (const pattern of patterns) {
+    for (const frame of page.frames()) {
+      for (const role of ['link', 'button', 'heading']) {
+        const loc = frame.getByRole(role, { name: pattern }).first();
+        if ((await loc.count()) > 0 && (await loc.isVisible().catch(() => false))) {
+          await loc.click({ timeout: 20000 });
+          return true;
+        }
+      }
+      const card = frame.locator('a, [role="link"]').filter({ hasText: pattern }).first();
+      if ((await card.count()) > 0 && (await card.isVisible().catch(() => false))) {
+        await card.click({ timeout: 20000 });
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Open the configured Shopify app from admin (Apps list → app link).
  */
 export async function openApp(page, appConfig) {
-  const store = appConfig.store_url.replace(/\/$/, '');
-  const appsUrl = `${store}/admin/apps`;
-  const appPattern = new RegExp(escapeRegExp(appConfig.name), 'i');
-
-  console.log(`Navigating to app: ${appConfig.name}`);
-  await page.goto(appsUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
-  await page.waitForTimeout(2500);
-
-  for (const frame of page.frames()) {
-    const link = frame.getByRole('link', { name: appPattern }).first();
-    if ((await link.count()) > 0 && (await link.isVisible().catch(() => false))) {
-      await link.click({ timeout: 20000 });
-      await page.waitForTimeout(4000);
-      return;
-    }
-  }
-
   if (appConfig.app_url) {
+    console.log(`Navigating to app URL: ${appConfig.app_url}`);
     await page.goto(appConfig.app_url, { waitUntil: 'domcontentloaded', timeout: 90000 });
     await page.waitForTimeout(3000);
     return;
   }
 
+  const store = appConfig.store_url.replace(/\/$/, '');
+  const handle = storeHandleFromUrl(store);
+  const appsUrls = [
+    `${store}/admin/apps`,
+    handle ? `https://admin.shopify.com/store/${handle}/apps` : null,
+  ].filter(Boolean);
+
+  const patterns = [
+    new RegExp(escapeRegExp(appConfig.name), 'i'),
+    ...(APP_NAME_ALIASES[appConfig.name] ?? []),
+  ];
+
+  console.log(`Navigating to app: ${appConfig.name}`);
+
+  for (const appsUrl of appsUrls) {
+    await page.goto(appsUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.waitForTimeout(2500);
+    if (await clickAppLink(page, patterns)) {
+      await page.waitForTimeout(4000);
+      return;
+    }
+  }
+
+  const appsNav = await findClickable(page, 'Apps', appConfig);
+  if (appsNav) {
+    await appsNav.click({ timeout: 20000 });
+    await page.waitForTimeout(2000);
+    if (await clickAppLink(page, patterns)) {
+      await page.waitForTimeout(4000);
+      return;
+    }
+  }
+
   throw new Error(
-    `Could not open app "${appConfig.name}" from ${appsUrl}. Add app_url to config/apps.json if needed.`
+    `Could not open app "${appConfig.name}". Add app_url to config/apps.json or check the app is installed on the dev store.`
   );
 }
 
@@ -164,6 +213,10 @@ export async function ensureAppContext(page, appConfig) {
   }
 
   if (!inApp) {
-    await openApp(page, appConfig);
+    try {
+      await openApp(page, appConfig);
+    } catch (err) {
+      console.warn(`App open skipped: ${err.message}`);
+    }
   }
 }
