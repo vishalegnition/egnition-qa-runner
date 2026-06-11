@@ -12,6 +12,8 @@ const RUNNER_ENV_KEYS = [
   'STEEL_SOLVE_CAPTCHA',
   'STEEL_SESSION_TIMEOUT_MS',
   'SHOPIFY_SESSION_COOKIES',
+  'CAPSOLVER_API_KEY',
+  'CAPSOLVER_PROXY',
   'SHOPIFY_ADMIN_EMAIL',
   'SHOPIFY_ADMIN_PASSWORD',
   'SHOPIFY_2FA_SECRET',
@@ -48,7 +50,8 @@ export function runCycleOnRailway({ app, cycleId, slackChannel }) {
   console.log(
     `Runner env: steel=${Boolean(env.STEEL_API_KEY?.trim())} ` +
       `cookies=${Boolean(env.SHOPIFY_SESSION_COOKIES?.trim())} ` +
-      `login=${Boolean(env.SHOPIFY_ADMIN_EMAIL?.trim())}`
+      `capsolver=${Boolean(env.CAPSOLVER_API_KEY?.trim())} ` +
+      `proxy=${Boolean(env.CAPSOLVER_PROXY?.trim())}`
   );
 
   const child = spawn(process.execPath, [runnerPath], {

@@ -35,6 +35,9 @@ jobs:
           APP: ${{ inputs.app }}
           CYCLE_ID: ${{ inputs.cycle_id }}
           STEEL_API_KEY: ${{ secrets.STEEL_API_KEY }}
+          SHOPIFY_SESSION_COOKIES: ${{ secrets.SHOPIFY_SESSION_COOKIES }}
+          CAPSOLVER_API_KEY: ${{ secrets.CAPSOLVER_API_KEY }}
+          CAPSOLVER_PROXY: ${{ secrets.CAPSOLVER_PROXY }}
           SHOPIFY_ADMIN_EMAIL: ${{ secrets.SHOPIFY_ADMIN_EMAIL }}
           SHOPIFY_ADMIN_PASSWORD: ${{ secrets.SHOPIFY_ADMIN_PASSWORD }}
           SHOPIFY_2FA_SECRET: ${{ secrets.SHOPIFY_2FA_SECRET }}

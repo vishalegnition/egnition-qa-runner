@@ -1,6 +1,8 @@
 import Steel from 'steel-sdk';
 import { chromium } from 'playwright';
 import { generate as generateTotp } from 'otplib';
+import { solveTurnstileOnPage, solveCloudflareChallenge } from './capsolver.js';
+import { getSteelProxyUrl } from './proxy.js';
 
 /** Hobby plan max = 15 min. Starter+ can set higher via env. */
 const STEEL_SESSION_TIMEOUT_MS = Number(process.env.STEEL_SESSION_TIMEOUT_MS) || 900_000;
@@ -124,10 +126,54 @@ export function buildLoginFailedMessage() {
 }
 
 export function buildCloudflareBlockedMessage() {
-  return (
-    'Cloudflare blocked Shopify login (Hobby plan has no captcha solving).\n' +
-    'Fix: re-export SHOPIFY_SESSION_COOKIES from the dev store admin, or upgrade Steel and set STEEL_SOLVE_CAPTCHA=true.'
-  );
+  const hasCapsolver = Boolean(process.env.CAPSOLVER_API_KEY);
+  const hasProxy = Boolean(process.env.CAPSOLVER_PROXY);
+  let msg = 'Cloudflare blocked Shopify admin access.\n\nFix options:\n';
+  msg += '1. Re-export SHOPIFY_SESSION_COOKIES from https://dailyshop-fuehd07p.myshopify.com/admin (include cf_clearance)\n';
+  if (!hasCapsolver) {
+    msg += '2. Set CAPSOLVER_API_KEY on Railway for automated Turnstile solving';
+  } else if (!hasProxy) {
+    msg += '2. Set CAPSOLVER_PROXY (SOAX/residential) for full Cloudflare interstitial bypass';
+  } else {
+    msg += '2. CapSolver could not solve — try fresh cookies or upgrade Steel (STEEL_SOLVE_CAPTCHA=true)';
+  }
+  return msg;
+}
+
+async function tryBypassCloudflare(page) {
+  if (!process.env.CAPSOLVER_API_KEY) return false;
+  console.log('Cloudflare detected — trying CapSolver…');
+
+  let solved = false;
+  try {
+    solved = await solveTurnstileOnPage(page);
+  } catch (err) {
+    console.warn('CapSolver Turnstile:', err.message);
+  }
+
+  if (!solved && process.env.CAPSOLVER_PROXY) {
+    try {
+      solved = await solveCloudflareChallenge(page);
+    } catch (err) {
+      console.warn('CapSolver Challenge:', err.message);
+    }
+  }
+
+  if (solved) {
+    await page.waitForTimeout(3000);
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+  }
+  return solved;
+}
+
+async function ensurePastCloudflare(page) {
+  for (let attempt = 0; attempt < 2 && (await isCloudflarePage(page)); attempt++) {
+    if (!(await tryBypassCloudflare(page))) break;
+  }
+  if (await isCloudflarePage(page)) {
+    throw new Error(buildCloudflareBlockedMessage());
+  }
 }
 
 async function isCloudflarePage(page) {
@@ -246,7 +292,14 @@ export async function createBrowser() {
     timeout: STEEL_SESSION_TIMEOUT_MS,
     dimensions: { width: 1440, height: 900 },
   };
-  if (useProxy) sessionParams.useProxy = true;
+
+  const externalProxy = getSteelProxyUrl();
+  if (externalProxy) {
+    sessionParams.proxyUrl = externalProxy;
+    console.log('Steel session using CAPSOLVER_PROXY as external proxy');
+  } else if (useProxy) {
+    sessionParams.useProxy = true;
+  }
   if (solveCaptcha) sessionParams.solveCaptcha = true;
 
   const session = await steel.sessions.create(sessionParams);
@@ -265,14 +318,18 @@ async function openShopifyAdminWithCookies(context, page, appConfig) {
   const cookies = loadSessionCookies();
   await context.addCookies(cookies);
 
+  const storeBase = appConfig.store_url.replace(/\/$/, '');
   const adminUrl = storeAdminUrl(appConfig.store_url);
+
+  console.log(`Warming session at ${storeBase}`);
+  await page.goto(storeBase, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+
   console.log(`Opening admin with session cookies: ${adminUrl}`);
   await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(2000);
 
-  if (await isCloudflarePage(page)) {
-    throw new Error(buildCloudflareBlockedMessage());
-  }
+  await ensurePastCloudflare(page);
+
   if (!(await isAdminReady(page))) {
     throw new Error(
       'Session cookies expired or invalid. Re-export SHOPIFY_SESSION_COOKIES from the dev store admin.'
@@ -292,9 +349,7 @@ export async function loginToShopify(page, appConfig) {
     return;
   }
 
-  if (await isCloudflarePage(page)) {
-    throw new Error(buildCloudflareBlockedMessage());
-  }
+  await ensurePastCloudflare(page);
 
   const email = process.env.SHOPIFY_ADMIN_EMAIL?.trim();
   const password = process.env.SHOPIFY_ADMIN_PASSWORD?.trim();
@@ -308,9 +363,8 @@ export async function loginToShopify(page, appConfig) {
   await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(2000);
 
-  if (await isCloudflarePage(page)) {
-    throw new Error(buildCloudflareBlockedMessage());
-  }
+  await ensurePastCloudflare(page);
+
   if (!(await isAdminReady(page))) {
     throw new Error(buildLoginFailedMessage());
   }
