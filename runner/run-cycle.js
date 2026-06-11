@@ -5,7 +5,7 @@ import { fetchCycleWithTestCases } from './zephyr.js';
 import {
   createBrowser,
   closeBrowser,
-  loginToShopify,
+  openShopifyAdmin,
   assertReadyForTests,
   isSessionExpired,
   isSteelSessionError,
@@ -110,15 +110,16 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
     ).catch(() => progressTs);
 
     browserHandle = await createBrowser();
-    const { page } = browserHandle;
+    const { page, context } = browserHandle;
 
+    const authMode = process.env.SHOPIFY_SESSION_COOKIES?.trim() ? 'cookies' : 'login';
     progressTs = await postRunProgress(
-      `🏃 *${cycleId}* — logging into Shopify admin…`,
+      `🏃 *${cycleId}* — opening Shopify admin (${authMode})…`,
       channel,
       progressTs
     ).catch(() => progressTs);
 
-    await loginToShopify(page, appConfig);
+    await openShopifyAdmin(context, page, appConfig);
 
     progressTs = await postRunProgress(
       `🏃 *${cycleId}* — opening *${appConfig.name}* app…`,
