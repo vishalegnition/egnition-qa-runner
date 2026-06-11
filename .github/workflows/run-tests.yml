@@ -30,22 +30,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Patchright Chrome
-        run: npx patchright install chrome --with-deps
-
-      - name: Start Xvfb
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y xvfb
-          Xvfb :99 -screen 0 1440x900x24 &
-          echo "DISPLAY=:99" >> $GITHUB_ENV
-
       - name: Run test cycle
         env:
           APP: ${{ inputs.app }}
           CYCLE_ID: ${{ inputs.cycle_id }}
-          SHOPIFY_SESSION_COOKIES: ${{ secrets.SHOPIFY_SESSION_COOKIES }}
-          CAPSOLVER_API_KEY: ${{ secrets.CAPSOLVER_API_KEY }}
+          STEEL_API_KEY: ${{ secrets.STEEL_API_KEY }}
+          SHOPIFY_ADMIN_EMAIL: ${{ secrets.SHOPIFY_ADMIN_EMAIL }}
+          SHOPIFY_ADMIN_PASSWORD: ${{ secrets.SHOPIFY_ADMIN_PASSWORD }}
+          SHOPIFY_2FA_SECRET: ${{ secrets.SHOPIFY_2FA_SECRET }}
           ZEPHYR_API_TOKEN: ${{ secrets.ZEPHYR_API_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

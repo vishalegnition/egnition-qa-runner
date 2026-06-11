@@ -9,10 +9,6 @@
     "run": "node runner/index.js",
     "webhook": "node webhook/index.js",
     "verify": "node scripts/verify-setup.js",
-    "shopify:session": "node scripts/shopify-save-session.js",
-    "shopify:upload": "node scripts/shopify-upload-session.js",
-    "shopify:export-cookies": "node scripts/export-shopify-cookies.js",
-    "shopify:upload-cookies": "node scripts/upload-shopify-cookies.js",
     "test:zephyr": "node runner/zephyr.js"
   },
   "engines": {
@@ -23,6 +19,8 @@
     "express": "^4.21.2",
     "otplib": "^13.4.1",
     "patchright": "^1.60.2",
-    "playwright": "^1.50.1"
+    "playwright": "^1.50.1",
+    "steel-sdk": "^0.18.0",
+    "steel-sdk": "^0.18.0"
   }
 }

@@ -3,12 +3,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchCycleWithTestCases } from './zephyr.js';
 import {
-  launchBrowser,
-  openShopifyAdminWithCookies,
+  createBrowser,
   closeBrowser,
+  loginToShopify,
   assertReadyForTests,
-  buildSessionExpiredMessage,
   isSessionExpired,
+  isSteelSessionError,
+  buildSteelTimeoutMessage,
 } from './browser.js';
 import { runStepLoop } from './actions.js';
 import { ensureAppContext } from './navigation.js';
@@ -80,14 +81,8 @@ async function runTestCase(page, testCase, cycleId, appConfig) {
   };
 }
 
-function isSessionError(msg = '') {
-  return /session expired|cloudflare|cookie|SHOPIFY_SESSION_COOKIES|verify you are human/i.test(
-    msg
-  );
-}
-
 /**
- * Run a Zephyr test cycle with cookie-injected Shopify session.
+ * Run a Zephyr test cycle via Steel.dev cloud browser.
  */
 export async function runCycle({ appId, cycleId, slackChannel }) {
   const startedAt = new Date();
@@ -103,21 +98,27 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
   env('ZEPHYR_API_TOKEN');
   const { testCases } = await fetchCycleWithTestCases(cycleId);
 
-  let browser;
-  let context;
-  let page;
+  let browserHandle;
   const results = [];
+  let sessionDead = false;
 
   try {
-    ({ browser, context, page } = await launchBrowser());
-
     progressTs = await postRunProgress(
-      `🏃 *${cycleId}* — opening Shopify admin with session cookies…`,
+      `🏃 *${cycleId}* — starting Steel.dev cloud browser…`,
       channel,
       progressTs
     ).catch(() => progressTs);
 
-    await openShopifyAdminWithCookies(context, page, appConfig);
+    browserHandle = await createBrowser();
+    const { page } = browserHandle;
+
+    progressTs = await postRunProgress(
+      `🏃 *${cycleId}* — logging into Shopify admin…`,
+      channel,
+      progressTs
+    ).catch(() => progressTs);
+
+    await loginToShopify(page, appConfig);
 
     progressTs = await postRunProgress(
       `🏃 *${cycleId}* — opening *${appConfig.name}* app…`,
@@ -132,8 +133,6 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
       channel,
       progressTs
     ).catch(() => progressTs);
-
-    let sessionDead = false;
 
     for (let i = 0; i < testCases.length; i++) {
       const tc = testCases[i];
@@ -150,67 +149,82 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
           key: tc.key,
           name: tc.name,
           passed: false,
-          reason: 'Skipped — Shopify session expired earlier in this run',
+          reason: 'Skipped — session lost earlier in this run',
         });
         continue;
       }
 
       try {
         await assertReadyForTests(page, appConfig);
+        await ensureAppContext(page, appConfig).catch((err) => {
+          console.warn(`App navigation warning: ${err.message}`);
+        });
+
+        console.log(`Running ${tc.key}: ${tc.name}`);
+        const result = await runTestCase(page, tc, cycleId, appConfig);
+        results.push(result);
+        console.log(`  ${result.passed ? 'PASS' : 'FAIL'}: ${result.reason ?? 'ok'}`);
+
+        if (
+          !result.passed &&
+          (isSessionExpired(page.url()) ||
+            /session expired|not on shopify admin|login failed/i.test(result.reason ?? ''))
+        ) {
+          sessionDead = true;
+        }
       } catch (err) {
-        sessionDead = true;
-        await postError(err.message, channel);
+        if (isSteelSessionError(err)) {
+          sessionDead = true;
+          await postError(
+            buildSteelTimeoutMessage(appConfig, cycleId, results.length, testCases.length),
+            channel
+          );
+          results.push({
+            key: tc.key,
+            name: tc.name,
+            passed: false,
+            reason: err.message,
+          });
+          for (let j = i + 1; j < testCases.length; j++) {
+            const rest = testCases[j];
+            results.push({
+              key: rest.key,
+              name: rest.name,
+              passed: false,
+              reason: 'Skipped — Steel.dev session timed out',
+            });
+          }
+          break;
+        }
+
+        console.error(`Error on ${tc.key}:`, err);
         results.push({
           key: tc.key,
           name: tc.name,
           passed: false,
           reason: err.message,
         });
-        continue;
-      }
-
-      console.log(`Running ${tc.key}: ${tc.name}`);
-      try {
-        await ensureAppContext(page, appConfig);
-      } catch (navErr) {
-        console.warn(`App navigation warning: ${navErr.message}`);
-      }
-      const result = await runTestCase(page, tc, cycleId, appConfig);
-      results.push(result);
-      console.log(`  ${result.passed ? 'PASS' : 'FAIL'}: ${result.reason ?? 'ok'}`);
-
-      if (
-        !result.passed &&
-        (isSessionExpired(page.url()) ||
-          /cloudflare|verify you are human|session expired|not on shopify admin/i.test(
-            result.reason ?? ''
-          ))
-      ) {
-        sessionDead = true;
-        if (/cloudflare|verify you are human/i.test(result.reason ?? '')) {
-          const { buildCloudflareBlockedMessage } = await import('./browser.js');
-          await postError(buildCloudflareBlockedMessage(), channel);
-        }
+        if (isSteelSessionError(err)) sessionDead = true;
       }
 
       const passed = results.filter((r) => r.passed).length;
       const failed = results.length - passed;
+      const last = results[results.length - 1];
       progressTs = await postRunProgress(
-        `🏃 *${cycleId}* — *${tc.key}* ${result.passed ? '✅' : '❌'} (${n}/${testCases.length}) · ${passed} passed, ${failed} failed`,
+        `🏃 *${cycleId}* — *${tc.key}* ${last?.passed ? '✅' : '❌'} (${n}/${testCases.length}) · ${passed} passed, ${failed} failed`,
         channel,
         progressTs
       );
     }
 
-    progressTs = await postRunProgress(
-      buildProgressFinished(cycleId, results),
-      channel,
-      progressTs
-    );
+    await postRunProgress(buildProgressFinished(cycleId, results), channel, progressTs);
   } catch (err) {
     console.error('Runner error:', err);
-    if (isSessionError(err.message)) {
-      await postError(err.message, channel);
+    if (isSteelSessionError(err)) {
+      await postError(
+        buildSteelTimeoutMessage(appConfig, cycleId, results.length, testCases.length),
+        channel
+      );
     } else {
       await postError(`Runner crashed: ${err.message}`, channel);
     }
@@ -226,7 +240,7 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
     }
     throw err;
   } finally {
-    await closeBrowser(browser);
+    await closeBrowser(browserHandle);
   }
 
   try {

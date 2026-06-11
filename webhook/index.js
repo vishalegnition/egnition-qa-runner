@@ -137,7 +137,7 @@ app.post('/trigger', rawBodyParser, async (req, res) => {
     res.json({
       response_type: 'in_channel',
       text:
-        `*${appName}* cycle *${cycleId}* — tests started on the *QA server* (Railway browser).\n` +
+        `*${appName}* cycle *${cycleId}* — tests started on the *QA server* (Steel.dev browser).\n` +
         `Progress and results will post in this channel.`,
     });
   } catch (err) {
@@ -168,19 +168,21 @@ app.post('/internal/run-test', express.json(), (req, res) => {
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    version: 'slack-fix',
+    version: 'steel-dev',
     runner: useGitHubActions() ? 'github-actions' : 'railway',
-    has_cookies: Boolean(process.env.SHOPIFY_SESSION_COOKIES?.trim()),
-    has_capsolver: Boolean(process.env.CAPSOLVER_API_KEY?.trim()),
-    has_proxy: Boolean(process.env.CAPSOLVER_PROXY?.trim()),
+    browser: 'steel.dev',
+    has_steel: Boolean(process.env.STEEL_API_KEY?.trim()),
+    has_shopify_login: Boolean(
+      process.env.SHOPIFY_ADMIN_EMAIL?.trim() && process.env.SHOPIFY_ADMIN_PASSWORD?.trim()
+    ),
   });
 });
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Webhook + Railway browser runner on port ${port}`);
+  console.log(`Webhook + Steel.dev QA runner on port ${port}`);
   console.log(
-    `Env check: cookies=${Boolean(process.env.SHOPIFY_SESSION_COOKIES?.trim())} ` +
-      `capsolver=${Boolean(process.env.CAPSOLVER_API_KEY?.trim())}`
+    `Env check: steel=${Boolean(process.env.STEEL_API_KEY?.trim())} ` +
+      `shopify_login=${Boolean(process.env.SHOPIFY_ADMIN_EMAIL?.trim())}`
   );
 });

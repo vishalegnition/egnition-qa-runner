@@ -1,5 +1,2 @@
-[phases.setup]
-aptPkgs = ["xvfb", "x11-utils", "fonts-liberation"]
-
 [phases.install]
-cmds = ["npm ci", "npx patchright install chrome"]
+cmds = ["npm ci"]
