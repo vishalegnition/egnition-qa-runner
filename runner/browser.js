@@ -169,13 +169,19 @@ export async function createBrowser() {
 
   const steel = new Steel({ steelAPIKey: apiKey });
 
-  console.log('Creating Steel.dev session (proxy + captcha solving)…');
-  const session = await steel.sessions.create({
+  const solveCaptcha = process.env.STEEL_SOLVE_CAPTCHA === 'true';
+  console.log(
+    `Creating Steel.dev session (proxy=${true}, captcha=${solveCaptcha})…`
+  );
+
+  const sessionParams = {
     useProxy: true,
-    solveCaptcha: true,
     timeout: STEEL_SESSION_TIMEOUT_MS,
     dimensions: { width: 1440, height: 900 },
-  });
+  };
+  if (solveCaptcha) sessionParams.solveCaptcha = true;
+
+  const session = await steel.sessions.create(sessionParams);
 
   console.log(`Steel session ${session.id} — viewer: ${session.sessionViewerUrl}`);
 
