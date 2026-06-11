@@ -3,7 +3,7 @@
  */
 
 import { getSessionBlockReason } from './browser.js';
-import { findClickable, findFillable } from './navigation.js';
+import { findClickable, findFillable, ensureAppContext, isInAppContext } from './navigation.js';
 
 const MAX_ITERATIONS = 10;
 const ACTION_TIMEOUT = 25000;
@@ -13,6 +13,17 @@ export async function executeAction(page, actionObj, appConfig) {
 
   switch (action) {
     case 'click': {
+      if (
+        appConfig &&
+        !isInAppContext(page, appConfig) &&
+        /bestsellers?|resort|stockiq|commetiq|order limits|multi-?store/i.test(
+          String(actionObj.target ?? '')
+        )
+      ) {
+        await ensureAppContext(page, appConfig).catch((err) => {
+          console.warn(`ensureAppContext before click: ${err.message}`);
+        });
+      }
       const loc = await findClickable(page, actionObj.target, appConfig);
       if (!loc) {
         throw new Error(`Element not found: ${actionObj.target}`);

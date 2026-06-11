@@ -1,6 +1,7 @@
 {
   "br": {
     "name": "BestSellers reSort",
+    "search_terms": ["BestSellers", "reSort", "Bestsellers", "Egnition"],
     "store_url": "https://dailyshop-fuehd07p.myshopify.com",
     "jira_project_key": "BR"
   },

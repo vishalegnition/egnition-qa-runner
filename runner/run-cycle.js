@@ -127,11 +127,7 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
       progressTs
     ).catch(() => progressTs);
 
-    try {
-      await ensureAppContext(page, appConfig);
-    } catch (err) {
-      console.warn(`Initial app navigation: ${err.message}`);
-    }
+    await ensureAppContext(page, appConfig);
 
     progressTs = await postRunProgress(
       `🏃 *${cycleId}* — loaded ${testCases.length} test cases, starting…`,
@@ -161,9 +157,7 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
 
       try {
         await assertReadyForTests(page, appConfig);
-        await ensureAppContext(page, appConfig).catch((err) => {
-          console.warn(`App navigation warning: ${err.message}`);
-        });
+        await ensureAppContext(page, appConfig);
 
         console.log(`Running ${tc.key}: ${tc.name}`);
         const result = await runTestCase(page, tc, cycleId, appConfig);

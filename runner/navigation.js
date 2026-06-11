@@ -1,5 +1,12 @@
 import { storeAdminUrl } from './browser.js';
 
+const APP_NAME_ALIASES = {
+  'BestSellers reSort': [/bestsellers?\s*resort/i, /bestsellers?/i, /\bresort\b/i, /egnition/i],
+  StockIQ: [/stockiq/i, /stock\s*iq/i, /egnition/i],
+  'Multi-Store Sync Power': [/multi-?store/i, /\bmssp\b/i, /egnition/i],
+  'Commetiq Order Limits': [/commetiq/i, /order\s*limits/i, /egnition/i],
+};
+
 /** Candidate link names to try (shortest first). */
 export function targetCandidates(target, appConfig) {
   const t = String(target ?? '').trim();
@@ -49,11 +56,48 @@ function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function storeHandleFromUrl(storeUrl) {
+  const m = storeUrl.match(/https?:\/\/([^.]+)\.myshopify\.com/i);
+  return m?.[1] ?? null;
+}
+
+function appPatterns(appConfig) {
+  const patterns = [
+    new RegExp(escapeRegExp(appConfig.name), 'i'),
+    ...(APP_NAME_ALIASES[appConfig.name] ?? []),
+  ];
+  for (const term of appConfig.search_terms ?? []) {
+    patterns.push(new RegExp(escapeRegExp(term), 'i'));
+  }
+  return patterns;
+}
+
+export function isInAppContext(page, appConfig) {
+  const url = page.url();
+  if (appPatterns(appConfig).some((p) => p.test(url))) return true;
+  for (const f of page.frames()) {
+    const frameUrl = f.url();
+    if (/egnition|bestseller|resort|stockiq|commetiq|oosp|mssp/i.test(frameUrl)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Find a clickable element across all frames (Shopify admin + embedded app iframes).
  */
 export async function findClickable(page, target, appConfig) {
-  const names = targetCandidates(target, appConfig);
+  let names = targetCandidates(target, appConfig);
+
+  const wantsApp =
+    appConfig &&
+    appPatterns(appConfig).some((p) => p.test(String(target ?? ''))) &&
+    !isInAppContext(page, appConfig);
+
+  if (wantsApp) {
+    names = ['Apps', ...names.filter((n) => n !== 'Apps')];
+  }
 
   for (const name of names) {
     const pattern = new RegExp(escapeRegExp(name), 'i');
@@ -68,7 +112,7 @@ export async function findClickable(page, target, appConfig) {
 
       const polaris = frame
         .locator(
-          'nav a, [role="navigation"] a, [data-polaris-unstyled] a, .Polaris-Navigation__Item a'
+          'nav a, [role="navigation"] a, [data-polaris-unstyled] a, .Polaris-Navigation__Item a, a[href*="/apps/"]'
         )
         .filter({ hasText: pattern })
         .first();
@@ -112,19 +156,21 @@ export async function findFillable(page, target, appConfig) {
   return null;
 }
 
-const APP_NAME_ALIASES = {
-  'BestSellers reSort': [/bestsellers?\s*resort/i, /bestsellers?/i, /\bresort\b/i],
-  StockIQ: [/stockiq/i, /stock\s*iq/i],
-  'Multi-Store Sync Power': [/multi-?store/i, /\bmssp\b/i],
-  'Commetiq Order Limits': [/commetiq/i, /order\s*limits/i],
-};
-
-function storeHandleFromUrl(storeUrl) {
-  const m = storeUrl.match(/https?:\/\/([^.]+)\.myshopify\.com/i);
-  return m?.[1] ?? null;
-}
-
 async function clickAppLink(page, patterns) {
+  for (const frame of page.frames()) {
+    const links = await frame.locator('a[href*="/apps/"]').all();
+    for (const link of links) {
+      const text = ((await link.textContent()) ?? '').trim();
+      const href = (await link.getAttribute('href')) ?? '';
+      const haystack = `${text} ${href}`;
+      if (!patterns.some((p) => p.test(haystack))) continue;
+      if (!(await link.isVisible().catch(() => false))) continue;
+      console.log(`Found app link: "${text}" → ${href}`);
+      await link.click({ timeout: 20000 });
+      return true;
+    }
+  }
+
   for (const pattern of patterns) {
     for (const frame of page.frames()) {
       for (const role of ['link', 'button', 'heading']) {
@@ -134,11 +180,26 @@ async function clickAppLink(page, patterns) {
           return true;
         }
       }
-      const card = frame.locator('a, [role="link"]').filter({ hasText: pattern }).first();
+      const card = frame.locator('a, [role="link"], button').filter({ hasText: pattern }).first();
       if ((await card.count()) > 0 && (await card.isVisible().catch(() => false))) {
         await card.click({ timeout: 20000 });
         return true;
       }
+    }
+  }
+  return false;
+}
+
+async function searchAppsPage(page, query) {
+  for (const frame of page.frames()) {
+    const search = frame
+      .getByPlaceholder(/search apps|search/i)
+      .or(frame.getByRole('searchbox'))
+      .first();
+    if ((await search.count()) > 0 && (await search.isVisible().catch(() => false))) {
+      await search.fill(query);
+      await page.waitForTimeout(1500);
+      return true;
     }
   }
   return false;
@@ -157,26 +218,31 @@ export async function openApp(page, appConfig) {
 
   const store = appConfig.store_url.replace(/\/$/, '');
   const handle = storeHandleFromUrl(store);
+  const patterns = appPatterns(appConfig);
+  const searchTerm = appConfig.search_terms?.[0] ?? 'BestSellers';
+
+  console.log(`Opening app: ${appConfig.name}`);
+
   const appsUrls = [
-    `${store}/admin/apps`,
     handle ? `https://admin.shopify.com/store/${handle}/apps` : null,
+    `${store}/admin/apps`,
   ].filter(Boolean);
-
-  const patterns = [
-    new RegExp(escapeRegExp(appConfig.name), 'i'),
-    ...(APP_NAME_ALIASES[appConfig.name] ?? []),
-  ];
-
-  console.log(`Navigating to app: ${appConfig.name}`);
 
   for (const appsUrl of appsUrls) {
     await page.goto(appsUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
     await page.waitForTimeout(2500);
+    await searchAppsPage(page, searchTerm);
     if (await clickAppLink(page, patterns)) {
       await page.waitForTimeout(4000);
-      return;
+      if (isInAppContext(page, appConfig)) return;
     }
   }
+
+  await page.goto(storeAdminUrl(appConfig.store_url), {
+    waitUntil: 'domcontentloaded',
+    timeout: 90000,
+  });
+  await page.waitForTimeout(2000);
 
   const appsNav = await findClickable(page, 'Apps', appConfig);
   if (appsNav) {
@@ -184,39 +250,45 @@ export async function openApp(page, appConfig) {
     await page.waitForTimeout(2000);
     if (await clickAppLink(page, patterns)) {
       await page.waitForTimeout(4000);
-      return;
+      if (isInAppContext(page, appConfig)) return;
     }
   }
 
+  const discovered = await discoverAppUrl(page, appConfig);
+  if (discovered) {
+    console.log(`Discovered app URL: ${discovered}`);
+    await page.goto(discovered, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.waitForTimeout(4000);
+    if (isInAppContext(page, appConfig)) return;
+  }
+
   throw new Error(
-    `Could not open app "${appConfig.name}". Add app_url to config/apps.json or check the app is installed on the dev store.`
+    `Could not open "${appConfig.name}". Open it once in Shopify admin, copy the URL from the address bar, and add "app_url" to config/apps.json for this app.`
   );
 }
 
-export async function ensureAppContext(page, appConfig) {
-  const adminUrl = storeAdminUrl(appConfig.store_url);
-  const url = page.url();
+async function discoverAppUrl(page, appConfig) {
+  const patterns = appPatterns(appConfig);
+  for (const frame of page.frames()) {
+    for (const link of await frame.locator('a[href*="/apps/"]').all()) {
+      const href = await link.getAttribute('href');
+      const text = ((await link.textContent()) ?? '').trim();
+      if (!href) continue;
+      if (!patterns.some((p) => p.test(`${text} ${href}`))) continue;
+      return href.startsWith('http') ? href : `https://admin.shopify.com${href}`;
+    }
+  }
+  return null;
+}
 
-  if (!/\.myshopify\.com\/admin|admin\.shopify\.com/i.test(url)) {
+export async function ensureAppContext(page, appConfig) {
+  if (isInAppContext(page, appConfig)) return;
+
+  const adminUrl = storeAdminUrl(appConfig.store_url);
+  if (!/\.myshopify\.com\/admin|admin\.shopify\.com/i.test(page.url())) {
     await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
     await page.waitForTimeout(2000);
   }
 
-  let inApp = new RegExp(escapeRegExp(appConfig.name), 'i').test(url);
-  if (!inApp) {
-    for (const f of page.frames()) {
-      if (/app|egnition|bestseller|resort|stockiq|commetiq/i.test(f.url())) {
-        inApp = true;
-        break;
-      }
-    }
-  }
-
-  if (!inApp) {
-    try {
-      await openApp(page, appConfig);
-    } catch (err) {
-      console.warn(`App open skipped: ${err.message}`);
-    }
-  }
+  await openApp(page, appConfig);
 }

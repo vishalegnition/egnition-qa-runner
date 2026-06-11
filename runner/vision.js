@@ -18,10 +18,11 @@ Respond ONLY in JSON with one of these formats:
   { "action": "assert", "result": "FAIL", "reason": "<what you observed>" }
 
 CRITICAL rules for "target":
-- Use SHORT labels exactly as shown on screen (2–4 words max): "Apps", "Products", "Collections", "${appName}", "Save", "Search"
-- NEVER use long phrases like "Apps menu item in the sidebar" or "Collections menu item under Products"
-- For sidebar nav, use: "Apps", "Products", "Collections", "Orders", "Settings"
-- To open the app under test, click "${appName}" (not other apps)
+- Use SHORT labels exactly as shown on screen (2–4 words max): "Apps", "Products", "Collections", "Save", "Search"
+- NEVER use long phrases like "Apps menu item in the sidebar"
+- To open ${appName}: if the app is NOT already open, click "Apps" in the left sidebar FIRST, then click the app name on the next screen
+- Only click "${appName}" when you can see it as a visible link/button on screen
+- If you see the Shopify admin home (not inside the app), use "Apps" not "${appName}"
 - Prefer clicking visible button/link text over describing location
 
 Never include any text outside the JSON object.
