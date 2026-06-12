@@ -12,6 +12,7 @@ const RUNNER_ENV_KEYS = [
   'SMOKE_TEST',
   'CAPSOLVER_API_KEY',
   'CAPSOLVER_PROXY',
+  'CLOUDFLARE_MANUAL_WAIT_MS',
   'SHOPIFY_ADMIN_EMAIL',
   'SHOPIFY_ADMIN_PASSWORD',
   'SHOPIFY_2FA_SECRET',
@@ -37,6 +38,7 @@ function buildRunnerEnv({ app, cycleId, slackChannel }) {
   // Never pass cookies to BrowserStack runs (IP-bound; GitHub/Railway secrets linger in process.env)
   delete env.SHOPIFY_SESSION_COOKIES;
   if (!env.SHOPIFY_AUTH_MODE) env.SHOPIFY_AUTH_MODE = 'login';
+  if (!env.CLOUDFLARE_MANUAL_WAIT_MS) env.CLOUDFLARE_MANUAL_WAIT_MS = '120000';
 
   return env;
 }

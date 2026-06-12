@@ -45,6 +45,31 @@ async function pollTask(taskId, maxWaitMs = 120000) {
   throw new Error('CapSolver task timed out');
 }
 
+async function waitAndExtractSitekey(page) {
+  let captured = null;
+  const onRequest = (req) => {
+    const m = req.url().match(/[?&/]k=(0x4[A-Za-z0-9_-]+)/);
+    if (m) captured = decodeURIComponent(m[1]);
+  };
+  page.on('request', onRequest);
+
+  try {
+    await page
+      .waitForSelector('iframe[src*="challenges.cloudflare"], iframe[src*="turnstile"]', {
+        timeout: 20000,
+      })
+      .catch(() => {});
+    for (let i = 0; i < 20 && !captured; i++) {
+      captured = captured || (await extractTurnstileSitekey(page));
+      if (captured) break;
+      await page.waitForTimeout(1000);
+    }
+  } finally {
+    page.off('request', onRequest);
+  }
+  return captured;
+}
+
 async function extractTurnstileSitekey(page) {
   for (const frame of page.frames()) {
     const src = frame.url();
@@ -205,22 +230,36 @@ export async function solveTurnstileOnPage(page) {
   if (!apiKey) return false;
 
   await page.waitForTimeout(1500);
-  const sitekey = await extractTurnstileSitekey(page);
+  const sitekey = await waitAndExtractSitekey(page);
   if (!sitekey) {
     console.warn('CapSolver: no Turnstile sitekey found on page');
     return false;
   }
 
   const pageUrl = page.url();
+  const metadata = await page.evaluate(() => {
+    const el = document.querySelector('.cf-turnstile, [data-sitekey]');
+    if (!el) return {};
+    return {
+      action: el.getAttribute('data-action') || undefined,
+      cdata: el.getAttribute('data-cdata') || undefined,
+    };
+  });
+
   console.log(`CapSolver: solving Turnstile (sitekey=${sitekey.slice(0, 12)}…) for ${pageUrl}`);
+
+  const task = {
+    type: 'AntiTurnstileTaskProxyLess',
+    websiteURL: pageUrl,
+    websiteKey: sitekey,
+  };
+  if (metadata.action || metadata.cdata) {
+    task.metadata = metadata;
+  }
 
   const { taskId } = await capsolverRequest('/createTask', {
     clientKey: apiKey,
-    task: {
-      type: 'AntiTurnstileTaskProxyLess',
-      websiteURL: pageUrl,
-      websiteKey: sitekey,
-    },
+    task,
   });
 
   const solution = await pollTask(taskId);
@@ -237,8 +276,7 @@ export async function solveTurnstileOnPage(page) {
 }
 
 /**
- * Full Cloudflare interstitial via proxy (only works when browser uses same proxy IP).
- * Skipped on BrowserStack — cookies are IP-bound.
+ * Full Cloudflare interstitial — requires CAPSOLVER_PROXY and browser on same proxy IP.
  */
 export async function solveCloudflareChallenge(page) {
   const apiKey = process.env.CAPSOLVER_API_KEY;
@@ -309,10 +347,10 @@ export async function solveCloudflareChallenge(page) {
 export async function bypassCloudflareOnPage(page, { useProxyChallenge = false } = {}) {
   const hasCapsolver = Boolean(process.env.CAPSOLVER_API_KEY?.trim());
 
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     if (await waitUntilCloudflareClears(page, 3000)) return true;
 
-    console.log(`Cloudflare bypass attempt ${attempt + 1}/4…`);
+    console.log(`Cloudflare bypass attempt ${attempt + 1}/5…`);
     await clickTurnstileWidget(page).catch(() => {});
     await page.waitForTimeout(2000);
 
@@ -333,7 +371,16 @@ export async function bypassCloudflareOnPage(page, { useProxyChallenge = false }
     }
 
     await clickTurnstileWidget(page).catch(() => {});
-    if (await waitUntilCloudflareClears(page, 12000)) return true;
+    if (await waitUntilCloudflareClears(page, 15000)) return true;
+  }
+
+  const manualMs = Number(process.env.CLOUDFLARE_MANUAL_WAIT_MS) || 0;
+  if (manualMs > 0) {
+    console.log(
+      `Auto bypass failed — waiting ${manualMs / 1000}s for manual Turnstile click in BrowserStack…`
+    );
+    await clickTurnstileWidget(page).catch(() => {});
+    if (await waitUntilCloudflareClears(page, manualMs)) return true;
   }
 
   return false;

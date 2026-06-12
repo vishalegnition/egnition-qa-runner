@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { chromium } from 'playwright-core';
 import { generate as generateTotp } from 'otplib';
 import { bypassCloudflareOnPage } from './capsolver.js';
+import { getProxyConfig } from './proxy.js';
 
 const require = createRequire(import.meta.url);
 const PLAYWRIGHT_VERSION = require('playwright-core/package.json').version;
@@ -381,9 +382,9 @@ export function buildCloudflareBlockedMessage(authMode) {
       `Auth mode: email/password login (no cookies).\n\n` +
       'Cloudflare Turnstile blocked admin.shopify.com on BrowserStack.\n\n' +
       'Fix:\n' +
-      '1. Confirm CAPSOLVER_API_KEY is set on Railway (auto-clicks + solves Turnstile)\n' +
-      '2. Confirm SHOPIFY_ADMIN_EMAIL/PASSWORD/2FA on Railway\n' +
-      '3. Re-run and watch BrowserStack session video\n';
+      '1. CAPSOLVER_API_KEY + CAPSOLVER_PROXY on Railway (browser + solver same IP)\n' +
+      '2. SHOPIFY_ADMIN_EMAIL/PASSWORD/2FA on Railway\n' +
+      '3. Or set CLOUDFLARE_MANUAL_WAIT_MS=120000 and click verify in BrowserStack live view\n';
     return msg;
   }
 
@@ -409,9 +410,10 @@ async function ensurePastCloudflare(page) {
   if (!(await isCloudflarePage(page))) return;
 
   console.log('Cloudflare Turnstile detected — bypassing…');
-  const useProxyChallenge = Boolean(process.env.CAPSOLVER_PROXY) && !usesBrowserStack();
-
-  const cleared = await bypassCloudflareOnPage(page, { useProxyChallenge });
+  const proxyCfg = getProxyConfig();
+  const cleared = await bypassCloudflareOnPage(page, {
+    useProxyChallenge: Boolean(proxyCfg && process.env.CAPSOLVER_API_KEY),
+  });
 
   if (!cleared && (await isCloudflarePage(page))) {
     if (!process.env.CAPSOLVER_API_KEY?.trim()) {
@@ -515,8 +517,11 @@ async function loginWithCredentials(page, email, password) {
   await handleTwoFactor(page);
 
   await page
-    .waitForURL(/admin\.shopify\.com|\.myshopify\.com\/admin/, { timeout: 60000 })
+    .waitForURL(/admin\.shopify\.com|\.myshopify\.com\/admin/, { timeout: 90000 })
     .catch(() => {});
+
+  await page.waitForTimeout(2000);
+  await ensurePastCloudflare(page);
 }
 
 export async function createBrowser(options = {}) {
@@ -530,8 +535,15 @@ export async function createBrowser(options = {}) {
     wsEndpoint: browserStackCdpUrl(caps),
     timeout: 120_000,
   });
+
+  const proxyCfg = getProxyConfig();
+  if (proxyCfg?.playwright) {
+    console.log(`BrowserStack context using residential proxy ${proxyCfg.playwright.server}`);
+  }
+
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
+    ...(proxyCfg?.playwright ? { proxy: proxyCfg.playwright } : {}),
   });
   const page = await context.newPage();
 
@@ -587,10 +599,18 @@ export async function loginToShopify(page, appConfig) {
   console.log('Logging into Shopify via accounts.shopify.com…');
   await loginWithCredentials(page, email, password);
 
-  await safeGoto(page, adminUrl, { fallbacks: [legacyUrl] });
-  await page.waitForTimeout(2000);
+  if (await isAdminReady(page)) {
+    console.log('Shopify admin ready after login');
+    return;
+  }
 
-  await ensurePastCloudflare(page);
+  if (!/admin\.shopify\.com\/store\//i.test(page.url())) {
+    await safeGoto(page, adminUrl, { fallbacks: [legacyUrl] });
+    await page.waitForTimeout(2000);
+    await ensurePastCloudflare(page);
+  } else if (await isCloudflarePage(page)) {
+    await ensurePastCloudflare(page);
+  }
 
   if (!(await isAdminReady(page))) {
     throw new Error(buildLoginFailedMessage());
