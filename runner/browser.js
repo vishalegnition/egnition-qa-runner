@@ -2,7 +2,7 @@ import https from 'node:https';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright-core';
 import { generate as generateTotp } from 'otplib';
-import { solveTurnstileOnPage, solveCloudflareChallenge } from './capsolver.js';
+import { bypassCloudflareOnPage } from './capsolver.js';
 
 const require = createRequire(import.meta.url);
 const PLAYWRIGHT_VERSION = require('playwright-core/package.json').version;
@@ -379,11 +379,11 @@ export function buildCloudflareBlockedMessage(authMode) {
   if (onBs && mode === 'login') {
     msg +=
       `Auth mode: email/password login (no cookies).\n\n` +
-      'BrowserStack IP may still be challenged by Cloudflare. Check the session video in BrowserStack Automate.\n\n' +
+      'Cloudflare Turnstile blocked admin.shopify.com on BrowserStack.\n\n' +
       'Fix:\n' +
-      '1. Confirm SHOPIFY_ADMIN_EMAIL, SHOPIFY_ADMIN_PASSWORD, SHOPIFY_2FA_SECRET on Railway\n' +
-      '2. Watch the BrowserStack session — complete any manual challenge if shown\n' +
-      '3. Contact BrowserStack support about Cloudflare on Shopify admin if it persists\n';
+      '1. Confirm CAPSOLVER_API_KEY is set on Railway (auto-clicks + solves Turnstile)\n' +
+      '2. Confirm SHOPIFY_ADMIN_EMAIL/PASSWORD/2FA on Railway\n' +
+      '3. Re-run and watch BrowserStack session video\n';
     return msg;
   }
 
@@ -405,56 +405,20 @@ export function buildCloudflareBlockedMessage(authMode) {
   return msg;
 }
 
-async function tryBypassCloudflare(page) {
-  if (!process.env.CAPSOLVER_API_KEY) return false;
-  console.log('Cloudflare detected — trying CapSolver…');
-
-  let solved = false;
-  try {
-    solved = await solveTurnstileOnPage(page);
-  } catch (err) {
-    console.warn('CapSolver Turnstile:', err.message);
-  }
-
-  if (!solved && process.env.CAPSOLVER_PROXY) {
-    try {
-      solved = await solveCloudflareChallenge(page);
-    } catch (err) {
-      console.warn('CapSolver Challenge:', err.message);
-    }
-  }
-
-  if (solved) {
-    await page.waitForTimeout(3000);
-    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-    await page.waitForTimeout(2000);
-  }
-  return solved;
-}
-
-async function waitForCloudflareAutoPass(page, maxMs = 60000) {
-  const start = Date.now();
-  while (Date.now() - start < maxMs) {
-    if (!(await isCloudflarePage(page))) return true;
-    await page.waitForTimeout(2000);
-  }
-  return false;
-}
-
 async function ensurePastCloudflare(page) {
   if (!(await isCloudflarePage(page))) return;
 
-  console.log('Cloudflare challenge detected — waiting for real browser auto-pass…');
-  if (await waitForCloudflareAutoPass(page)) return;
+  console.log('Cloudflare Turnstile detected — bypassing…');
+  const useProxyChallenge = Boolean(process.env.CAPSOLVER_PROXY) && !usesBrowserStack();
 
-  for (let attempt = 0; attempt < 3 && (await isCloudflarePage(page)); attempt++) {
-    if (await tryBypassCloudflare(page)) {
-      if (await waitForCloudflareAutoPass(page, 20000)) return;
+  const cleared = await bypassCloudflareOnPage(page, { useProxyChallenge });
+
+  if (!cleared && (await isCloudflarePage(page))) {
+    if (!process.env.CAPSOLVER_API_KEY?.trim()) {
+      throw new Error(
+        'Cloudflare blocked Shopify admin. Set CAPSOLVER_API_KEY on Railway to auto-solve Turnstile.'
+      );
     }
-    await page.waitForTimeout(2000);
-  }
-
-  if (await isCloudflarePage(page)) {
     throw new Error(buildCloudflareBlockedMessage(resolveShopifyAuthMode()));
   }
 }
