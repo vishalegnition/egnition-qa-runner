@@ -16,14 +16,76 @@ function storeHandleFromUrl(storeUrl) {
   return null;
 }
 
+/** Canonical Shopify admin URL (preferred over legacy *.myshopify.com/admin). */
 export function storeAdminUrl(storeUrl) {
+  const handle = storeHandleFromUrl(storeUrl);
+  if (handle) return `https://admin.shopify.com/store/${handle}`;
+  const base = storeUrl.replace(/\/$/, '');
+  return base.includes('/admin') ? base : `${base}/admin`;
+}
+
+/** Legacy myshopify admin — fallback when admin.shopify.com fails via proxy. */
+export function storeAdminUrlLegacy(storeUrl) {
+  const handle = storeHandleFromUrl(storeUrl);
+  if (handle) return `https://${handle}.myshopify.com/admin`;
   const base = storeUrl.replace(/\/$/, '');
   if (/\.myshopify\.com/i.test(base)) {
     return base.includes('/admin') ? base : `${base}/admin`;
   }
-  const handle = storeHandleFromUrl(storeUrl);
-  if (handle) return `https://${handle}.myshopify.com/admin`;
-  return base.includes('/admin') ? base : `${base}/admin`;
+  return storeAdminUrl(storeUrl);
+}
+
+export function isChromeErrorUrl(url) {
+  return /^chrome-error:\/\//i.test(url ?? '');
+}
+
+export function isNavigationNetworkError(err) {
+  const msg = String(err?.message ?? err);
+  return /chrome-error|chromewebdata|interrupted by another navigation|ERR_(CONNECTION|NAME_NOT_RESOLVED|TIMED_OUT|SSL)/i.test(
+    msg
+  );
+}
+
+/**
+ * Navigate with retries and alternate URLs when Steel/proxy hits chrome-error pages.
+ */
+export async function safeGoto(page, url, options = {}) {
+  const {
+    timeout = 60000,
+    waitUntil = 'domcontentloaded',
+    retries = 2,
+    fallbacks = [],
+  } = options;
+
+  const targets = [...new Set([url, ...fallbacks].filter(Boolean))];
+  let lastError;
+
+  for (const target of targets) {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        if (attempt > 0) console.log(`Retrying navigation to ${target} (attempt ${attempt + 1})`);
+        else console.log(`Navigating to ${target}`);
+        await page.goto(target, { waitUntil, timeout });
+        if (isChromeErrorUrl(page.url())) {
+          throw new Error(`Browser network error loading ${target}`);
+        }
+        return target;
+      } catch (err) {
+        lastError = err;
+        if (!isNavigationNetworkError(err) && !isChromeErrorUrl(page.url())) {
+          throw err;
+        }
+        console.warn(`Navigation failed (${target}): ${err.message}`);
+        await page.waitForTimeout(2000 * (attempt + 1));
+      }
+    }
+  }
+
+  throw new Error(
+    'Could not reach Shopify admin (browser network error). ' +
+      'Check CAPSOLVER_PROXY connectivity on Railway, or re-export SHOPIFY_SESSION_COOKIES. ' +
+      `Last error: ${lastError?.message ?? 'unknown'}`
+  );
 }
 
 const SAME_SITE_MAP = {
@@ -318,14 +380,11 @@ async function openShopifyAdminWithCookies(context, page, appConfig) {
   const cookies = loadSessionCookies();
   await context.addCookies(cookies);
 
-  const storeBase = appConfig.store_url.replace(/\/$/, '');
   const adminUrl = storeAdminUrl(appConfig.store_url);
-
-  console.log(`Warming session at ${storeBase}`);
-  await page.goto(storeBase, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+  const legacyUrl = storeAdminUrlLegacy(appConfig.store_url);
 
   console.log(`Opening admin with session cookies: ${adminUrl}`);
-  await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await safeGoto(page, adminUrl, { fallbacks: [legacyUrl] });
   await page.waitForTimeout(2000);
 
   await ensurePastCloudflare(page);
@@ -340,8 +399,8 @@ async function openShopifyAdminWithCookies(context, page, appConfig) {
 
 export async function loginToShopify(page, appConfig) {
   const adminUrl = storeAdminUrl(appConfig.store_url);
-  console.log(`Navigating to ${adminUrl}`);
-  await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  const legacyUrl = storeAdminUrlLegacy(appConfig.store_url);
+  await safeGoto(page, adminUrl, { fallbacks: [legacyUrl] });
   await page.waitForTimeout(2000);
 
   if (await isAdminReady(page)) {
@@ -360,7 +419,7 @@ export async function loginToShopify(page, appConfig) {
   console.log('Logging into Shopify…');
   await loginWithCredentials(page, email, password);
 
-  await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await safeGoto(page, adminUrl, { fallbacks: [legacyUrl] });
   await page.waitForTimeout(2000);
 
   await ensurePastCloudflare(page);

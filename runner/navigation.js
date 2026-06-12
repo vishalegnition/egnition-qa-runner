@@ -1,4 +1,4 @@
-import { storeAdminUrl } from './browser.js';
+import { storeAdminUrl, safeGoto } from './browser.js';
 
 const APP_NAME_ALIASES = {
   'BestSellers reSort': [/bestsellers?\s*resort/i, /bestsellers?/i, /\bresort\b/i, /egnition/i],
@@ -211,7 +211,7 @@ async function searchAppsPage(page, query) {
 export async function openApp(page, appConfig) {
   if (appConfig.app_url) {
     console.log(`Navigating to app URL: ${appConfig.app_url}`);
-    await page.goto(appConfig.app_url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await safeGoto(page, appConfig.app_url, { timeout: 90000 });
     await page.waitForTimeout(3000);
     return;
   }
@@ -229,7 +229,7 @@ export async function openApp(page, appConfig) {
   ].filter(Boolean);
 
   for (const appsUrl of appsUrls) {
-    await page.goto(appsUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await safeGoto(page, appsUrl, { timeout: 90000 });
     await page.waitForTimeout(2500);
     await searchAppsPage(page, searchTerm);
     if (await clickAppLink(page, patterns)) {
@@ -238,10 +238,7 @@ export async function openApp(page, appConfig) {
     }
   }
 
-  await page.goto(storeAdminUrl(appConfig.store_url), {
-    waitUntil: 'domcontentloaded',
-    timeout: 90000,
-  });
+  await safeGoto(page, storeAdminUrl(appConfig.store_url), { timeout: 90000 });
   await page.waitForTimeout(2000);
 
   const appsNav = await findClickable(page, 'Apps', appConfig);
@@ -257,7 +254,7 @@ export async function openApp(page, appConfig) {
   const discovered = await discoverAppUrl(page, appConfig);
   if (discovered) {
     console.log(`Discovered app URL: ${discovered}`);
-    await page.goto(discovered, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await safeGoto(page, discovered, { timeout: 90000 });
     await page.waitForTimeout(4000);
     if (isInAppContext(page, appConfig)) return;
   }
@@ -286,7 +283,7 @@ export async function ensureAppContext(page, appConfig) {
 
   const adminUrl = storeAdminUrl(appConfig.store_url);
   if (!/\.myshopify\.com\/admin|admin\.shopify\.com/i.test(page.url())) {
-    await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await safeGoto(page, adminUrl, { timeout: 90000 });
     await page.waitForTimeout(2000);
   }
 
