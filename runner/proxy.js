@@ -55,15 +55,3 @@ export function getProxyConfig() {
   }
 }
 
-/** Steel `proxyUrl` — use external proxy on Hobby (Steel `useProxy` needs paid plan). */
-export function getSteelProxyUrl() {
-  const config = getProxyConfig();
-  if (!config?.playwright) return null;
-
-  const { server, username, password } = config.playwright;
-  const hostPort = server.replace(/^https?:\/\//, '');
-  if (username && password) {
-    return `http://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${hostPort}`;
-  }
-  return server.startsWith('http') ? server : `http://${hostPort}`;
-}

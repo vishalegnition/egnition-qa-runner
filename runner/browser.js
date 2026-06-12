@@ -2,7 +2,6 @@ import Steel from 'steel-sdk';
 import { chromium } from 'playwright';
 import { generate as generateTotp } from 'otplib';
 import { solveTurnstileOnPage, solveCloudflareChallenge } from './capsolver.js';
-import { getSteelProxyUrl } from './proxy.js';
 
 /** Hobby plan max = 15 min. Starter+ can set higher via env. */
 const STEEL_SESSION_TIMEOUT_MS = Number(process.env.STEEL_SESSION_TIMEOUT_MS) || 900_000;
@@ -83,7 +82,7 @@ export async function safeGoto(page, url, options = {}) {
 
   throw new Error(
     'Could not reach Shopify admin (browser network error). ' +
-      'Check CAPSOLVER_PROXY connectivity on Railway, or re-export SHOPIFY_SESSION_COOKIES. ' +
+      'Re-export SHOPIFY_SESSION_COOKIES or retry. ' +
       `Last error: ${lastError?.message ?? 'unknown'}`
   );
 }
@@ -355,11 +354,7 @@ export async function createBrowser() {
     dimensions: { width: 1440, height: 900 },
   };
 
-  const externalProxy = getSteelProxyUrl();
-  if (externalProxy) {
-    sessionParams.proxyUrl = externalProxy;
-    console.log('Steel session using CAPSOLVER_PROXY as external proxy');
-  } else if (useProxy) {
+  if (useProxy) {
     sessionParams.useProxy = true;
   }
   if (solveCaptcha) sessionParams.solveCaptcha = true;

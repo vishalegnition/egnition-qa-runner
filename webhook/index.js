@@ -168,7 +168,7 @@ app.post('/internal/run-test', express.json(), (req, res) => {
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    version: 'admin-url-fix',
+    version: 'no-steel-proxy',
     runner: useGitHubActions() ? 'github-actions' : 'railway',
     browser: 'steel.dev',
     has_steel: Boolean(process.env.STEEL_API_KEY?.trim()),

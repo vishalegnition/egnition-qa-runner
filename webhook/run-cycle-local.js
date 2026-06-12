@@ -51,7 +51,7 @@ export function runCycleOnRailway({ app, cycleId, slackChannel }) {
     `Runner env: steel=${Boolean(env.STEEL_API_KEY?.trim())} ` +
       `cookies=${Boolean(env.SHOPIFY_SESSION_COOKIES?.trim())} ` +
       `capsolver=${Boolean(env.CAPSOLVER_API_KEY?.trim())} ` +
-      `proxy=${Boolean(env.CAPSOLVER_PROXY?.trim())}`
+      `capsolver_proxy=${Boolean(env.CAPSOLVER_PROXY?.trim())}`
   );
 
   const child = spawn(process.execPath, [runnerPath], {
