@@ -350,17 +350,47 @@ export function buildLoginFailedMessage() {
   );
 }
 
+function usesBrowserStack() {
+  return Boolean(
+    process.env.BROWSERSTACK_USERNAME?.trim() && process.env.BROWSERSTACK_ACCESS_KEY?.trim()
+  );
+}
+
+function hasShopifyCredentials() {
+  return Boolean(
+    process.env.SHOPIFY_ADMIN_EMAIL?.trim() && process.env.SHOPIFY_ADMIN_PASSWORD?.trim()
+  );
+}
+
+function resolveShopifyAuthMode() {
+  const mode = process.env.SHOPIFY_AUTH_MODE?.trim().toLowerCase();
+  if (mode === 'login' || mode === 'cookies') return mode;
+  // Cookies are IP-bound — they fail on BrowserStack / CapSolver proxy mismatch
+  if (usesBrowserStack() && hasShopifyCredentials()) return 'login';
+  if (process.env.SHOPIFY_SESSION_COOKIES?.trim()) return 'cookies';
+  return 'login';
+}
+
 export function buildCloudflareBlockedMessage() {
-  const hasCapsolver = Boolean(process.env.CAPSOLVER_API_KEY);
-  const hasProxy = Boolean(process.env.CAPSOLVER_PROXY);
-  let msg = 'Cloudflare blocked Shopify admin access.\n\nFix options:\n';
-  msg += '1. Re-export SHOPIFY_SESSION_COOKIES from https://dailyshop-fuehd07p.myshopify.com/admin (include cf_clearance)\n';
-  if (!hasCapsolver) {
-    msg += '2. Set CAPSOLVER_API_KEY on Railway for automated Turnstile solving';
-  } else if (!hasProxy) {
-    msg += '2. Set CAPSOLVER_PROXY (SOAX/residential) for full Cloudflare interstitial bypass';
+  const onBs = usesBrowserStack();
+  let msg = 'Cloudflare blocked Shopify admin access.\n\n';
+
+  if (onBs) {
+    msg +=
+      'On BrowserStack, cookies exported from your laptop usually fail (cf_clearance is tied to your IP).\n\n' +
+      'Fix:\n' +
+      '1. Remove SHOPIFY_SESSION_COOKIES from Railway\n' +
+      '2. Set SHOPIFY_ADMIN_EMAIL + SHOPIFY_ADMIN_PASSWORD (+ SHOPIFY_2FA_SECRET if needed)\n' +
+      '3. Re-run — BrowserStack real Chrome should pass login\n';
+    return msg;
+  }
+
+  msg += 'Fix options:\n';
+  msg += '1. Use SHOPIFY_ADMIN_EMAIL/PASSWORD login, or re-export fresh SHOPIFY_SESSION_COOKIES\n';
+  if (!process.env.CAPSOLVER_API_KEY) {
+    msg += '2. Set CAPSOLVER_API_KEY for automated Turnstile solving';
   } else {
-    msg += '2. CapSolver could not solve — try fresh SHOPIFY_SESSION_COOKIES';
+    msg += '2. CapSolver could not bypass — try credential login instead of cookies';
   }
   return msg;
 }
@@ -392,10 +422,28 @@ async function tryBypassCloudflare(page) {
   return solved;
 }
 
-async function ensurePastCloudflare(page) {
-  for (let attempt = 0; attempt < 2 && (await isCloudflarePage(page)); attempt++) {
-    if (!(await tryBypassCloudflare(page))) break;
+async function waitForCloudflareAutoPass(page, maxMs = 45000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    if (!(await isCloudflarePage(page))) return true;
+    await page.waitForTimeout(2000);
   }
+  return false;
+}
+
+async function ensurePastCloudflare(page) {
+  if (!(await isCloudflarePage(page))) return;
+
+  console.log('Cloudflare challenge detected — waiting for real browser auto-pass…');
+  if (await waitForCloudflareAutoPass(page)) return;
+
+  for (let attempt = 0; attempt < 3 && (await isCloudflarePage(page)); attempt++) {
+    if (await tryBypassCloudflare(page)) {
+      if (await waitForCloudflareAutoPass(page, 20000)) return;
+    }
+    await page.waitForTimeout(2000);
+  }
+
   if (await isCloudflarePage(page)) {
     throw new Error(buildCloudflareBlockedMessage());
   }
@@ -469,9 +517,7 @@ async function loginWithCredentials(page, email, password) {
   });
   await page.waitForTimeout(1500);
 
-  if (await isCloudflarePage(page)) {
-    throw new Error(buildCloudflareBlockedMessage());
-  }
+  await ensurePastCloudflare(page);
 
   if (!(await emailInput(page).first().isVisible().catch(() => false))) {
     throw new Error('Could not find Shopify email field on login page');
@@ -587,11 +633,37 @@ export async function loginToShopify(page, appConfig) {
   console.log('Shopify admin login successful');
 }
 
-/** Cookies if SHOPIFY_SESSION_COOKIES is set, otherwise email/password login. */
+/**
+ * Open Shopify admin — login preferred on BrowserStack (cookies are IP-bound).
+ * SHOPIFY_AUTH_MODE: login | cookies | auto (default)
+ */
 export async function openShopifyAdmin(context, page, appConfig) {
-  if (process.env.SHOPIFY_SESSION_COOKIES?.trim()) {
+  const mode = resolveShopifyAuthMode();
+  console.log(`Shopify auth mode: ${mode}`);
+
+  if (mode === 'login') {
+    if (!hasShopifyCredentials()) {
+      throw new Error(
+        'SHOPIFY_ADMIN_EMAIL and SHOPIFY_ADMIN_PASSWORD are required for BrowserStack login'
+      );
+    }
+    await loginToShopify(page, appConfig);
+    return;
+  }
+
+  if (!process.env.SHOPIFY_SESSION_COOKIES?.trim()) {
+    await loginToShopify(page, appConfig);
+    return;
+  }
+
+  try {
     await openShopifyAdminWithCookies(context, page, appConfig);
-  } else {
+  } catch (err) {
+    const retryWithLogin =
+      hasShopifyCredentials() &&
+      /cloudflare|session cookies expired|invalid/i.test(String(err?.message ?? ''));
+    if (!retryWithLogin) throw err;
+    console.warn('Cookie auth failed — falling back to credential login…');
     await loginToShopify(page, appConfig);
   }
 }

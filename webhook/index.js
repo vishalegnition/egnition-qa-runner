@@ -137,7 +137,7 @@ app.post('/trigger', rawBodyParser, async (req, res) => {
     res.json({
       response_type: 'in_channel',
       text:
-        `*${appName}* cycle *${cycleId}* — tests started on the *QA server* (Steel.dev browser).\n` +
+        `*${appName}* cycle *${cycleId}* — tests started on the *QA server* (BrowserStack).\n` +
         `Progress and results will post in this channel.`,
     });
   } catch (err) {
@@ -168,7 +168,7 @@ app.post('/internal/run-test', express.json(), (req, res) => {
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    version: 'bs-playwright-version',
+    version: 'bs-login-first',
     runner: useGitHubActions() ? 'github-actions' : 'railway',
     browser: 'browserstack',
     has_browserstack: Boolean(

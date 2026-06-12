@@ -120,7 +120,9 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
     browserHandle = await createBrowser({ cycleId });
     const { page, context } = browserHandle;
 
-    const authMode = process.env.SHOPIFY_SESSION_COOKIES?.trim() ? 'cookies' : 'login';
+    const authMode =
+      process.env.SHOPIFY_AUTH_MODE?.trim() ||
+      (process.env.BROWSERSTACK_USERNAME?.trim() ? 'login (BrowserStack)' : 'auto');
     progressTs = await postRunProgress(
       `🏃 *${cycleId}* — opening Shopify admin (${authMode})…`,
       channel,
