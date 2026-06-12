@@ -1,7 +1,11 @@
 import https from 'node:https';
+import { createRequire } from 'node:module';
 import { chromium } from 'playwright-core';
 import { generate as generateTotp } from 'otplib';
 import { solveTurnstileOnPage, solveCloudflareChallenge } from './capsolver.js';
+
+const require = createRequire(import.meta.url);
+const PLAYWRIGHT_VERSION = require('playwright-core/package.json').version;
 
 function browserStackCredentials() {
   const username = process.env.BROWSERSTACK_USERNAME?.trim();
@@ -31,6 +35,9 @@ function browserStackCaps({ cycleId } = {}) {
     'browserstack.accessKey': accessKey,
     'browserstack.networkLogs': true,
     'browserstack.consoleLogs': 'info',
+    // Required — version mismatch causes CDP socket disconnects on BrowserStack
+    'client.playwrightVersion': PLAYWRIGHT_VERSION,
+    'browserstack.playwrightVersion': '1.latest',
   };
 }
 
@@ -49,6 +56,73 @@ function extractBrowserStackSessionId(browser) {
     return match?.[1] ?? null;
   } catch {
     return null;
+  }
+}
+
+function browserStackApiJson(path, method = 'GET', body) {
+  const { username, accessKey } = browserStackCredentials();
+  const payload = body ? JSON.stringify(body) : null;
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'api.browserstack.com',
+        path,
+        method,
+        auth: `${username}:${accessKey}`,
+        headers: payload
+          ? {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(payload),
+            }
+          : {},
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          try {
+            resolve(data ? JSON.parse(data) : null);
+          } catch {
+            resolve(data);
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+async function fetchSessionIdForBuild(buildName) {
+  try {
+    const builds = await browserStackApiJson('/automate/builds.json');
+    if (!Array.isArray(builds)) return null;
+    const match = builds.find((b) => b.automation_build?.name === buildName);
+    return match?.automation_build?.sessions?.[0]?.hashed_id ?? null;
+  } catch (err) {
+    console.warn('BrowserStack session lookup:', err.message);
+    return null;
+  }
+}
+
+/** Set session status via in-browser executor (works without session ID). */
+export async function markBrowserStackSession(page, passed, reason) {
+  if (!page) return;
+  try {
+    const payload = {
+      action: 'setSessionStatus',
+      arguments: {
+        status: passed ? 'passed' : 'failed',
+        reason: reason ?? (passed ? 'All tests passed' : 'One or more tests failed'),
+      },
+    };
+    await page.evaluate(() => {}, `browserstack_executor: ${JSON.stringify(payload)}`);
+  } catch (err) {
+    console.warn('BrowserStack setSessionStatus:', err.message);
   }
 }
 
@@ -250,7 +324,7 @@ export function isSessionExpired(url) {
 
 export function isRemoteBrowserSessionError(err) {
   const msg = String(err?.message ?? err).toLowerCase();
-  return /session.*timed?\s*out|session.*released|websocket.*closed|target.*closed|browser.*closed|cdp.*disconnect|connection.*closed|protocol error|session expired|browserstack/i.test(
+  return /session.*timed?\s*out|websocket.*closed|target.*closed|browser has been closed|browser.*closed|cdp.*disconnect|protocol error.*target|connection.*closed.*browser/i.test(
     msg
   );
 }
@@ -258,11 +332,12 @@ export function isRemoteBrowserSessionError(err) {
 /** @deprecated Use isRemoteBrowserSessionError */
 export const isSteelSessionError = isRemoteBrowserSessionError;
 
-export function buildBrowserSessionLostMessage(appConfig, cycleId, completed, total) {
+export function buildBrowserSessionLostMessage(appConfig, cycleId, completed, total, err) {
+  const detail = err?.message ? `\nReason: ${err.message}` : '';
   return (
     `⚠️ BrowserStack session ended during *${appConfig.name}* — Cycle *${cycleId}*.\n` +
-    `Completed ${completed} of ${total} test cases.\n` +
-    `Check the session in BrowserStack Automate dashboard for details.`
+    `Completed ${completed} of ${total} test cases.${detail}\n` +
+    `Check Automate → Sessions in the BrowserStack dashboard.`
   );
 }
 
@@ -427,15 +502,24 @@ async function loginWithCredentials(page, email, password) {
 export async function createBrowser(options = {}) {
   const caps = browserStackCaps(options);
   console.log(
-    `Connecting to BrowserStack Automate (${caps.os} ${caps.os_version}, ${caps.browser}, build=${caps.build})…`
+    `Connecting to BrowserStack Automate (${caps.os} ${caps.os_version}, ${caps.browser}, ` +
+      `playwright=${PLAYWRIGHT_VERSION}, build=${caps.build})…`
   );
 
-  const browser = await chromium.connect(browserStackCdpUrl(caps));
+  const browser = await chromium.connect({
+    wsEndpoint: browserStackCdpUrl(caps),
+    timeout: 120_000,
+  });
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
   });
   const page = await context.newPage();
-  const sessionId = extractBrowserStackSessionId(browser);
+
+  let sessionId = extractBrowserStackSessionId(browser);
+  if (!sessionId) {
+    await page.waitForTimeout(2000);
+    sessionId = await fetchSessionIdForBuild(caps.build);
+  }
 
   if (sessionId) {
     console.log(`BrowserStack session: ${sessionId}`);
@@ -443,7 +527,7 @@ export async function createBrowser(options = {}) {
     console.log('BrowserStack session connected (watch live in Automate → Sessions)');
   }
 
-  return { browser, context, page, sessionId };
+  return { browser, context, page, sessionId, buildName: caps.build };
 }
 
 export const launchBrowser = createBrowser;

@@ -34,6 +34,7 @@ function buildRunnerEnv({ app, cycleId, slackChannel }) {
     if (process.env[key]) env[key] = process.env[key];
   }
   if (slackChannel) env.SLACK_CHANNEL_ID = slackChannel;
+  if (!env.SMOKE_TEST) env.SMOKE_TEST = 'true';
 
   return env;
 }

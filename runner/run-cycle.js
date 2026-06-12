@@ -11,6 +11,7 @@ import {
   isRemoteBrowserSessionError,
   buildBrowserSessionLostMessage,
   updateBrowserStackStatus,
+  markBrowserStackSession,
 } from './browser.js';
 import { runStepLoop } from './actions.js';
 import { ensureAppContext } from './navigation.js';
@@ -182,7 +183,13 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
         if (isRemoteBrowserSessionError(err)) {
           sessionDead = true;
           await postError(
-            buildBrowserSessionLostMessage(appConfig, cycleId, results.length, testCases.length),
+            buildBrowserSessionLostMessage(
+              appConfig,
+              cycleId,
+              results.length,
+              allTestCases.length,
+              err
+            ),
             channel
           );
           results.push({
@@ -224,20 +231,25 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
     }
 
     const allPassed = results.length > 0 && results.every((r) => r.passed);
-    await updateBrowserStackStatus(
-      browserHandle?.sessionId,
-      allPassed,
-      allPassed ? 'All tests passed' : 'One or more tests failed'
-    );
+    const statusReason = allPassed ? 'All tests passed' : 'One or more tests failed';
+    await markBrowserStackSession(browserHandle?.page, allPassed, statusReason);
+    await updateBrowserStackStatus(browserHandle?.sessionId, allPassed, statusReason);
 
     await postRunProgress(buildProgressFinished(cycleId, results), channel, progressTs);
   } catch (err) {
     console.error('Runner error:', err);
+    await markBrowserStackSession(browserHandle?.page, false, err.message).catch(() => {});
     await updateBrowserStackStatus(browserHandle?.sessionId, false, err.message).catch(() => {});
 
     if (isRemoteBrowserSessionError(err)) {
       await postError(
-        buildBrowserSessionLostMessage(appConfig, cycleId, results.length, testCases.length),
+        buildBrowserSessionLostMessage(
+          appConfig,
+          cycleId,
+          results.length,
+          allTestCases.length,
+          err
+        ),
         channel
       );
     } else {
