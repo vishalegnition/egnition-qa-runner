@@ -165,6 +165,31 @@ app.post('/internal/run-test', express.json(), (req, res) => {
   res.json({ ok: true, app: appName, cycle_id: cycleId, runner: 'railway' });
 });
 
+app.get('/config', (req, res) => {
+  const secret = process.env.RAILWAY_CONFIG_SECRET?.trim();
+  const header = String(req.headers['x-config-secret'] ?? '').trim();
+  if (!secret || header !== secret) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  res.json({
+    zephyr: {
+      baseUrl: process.env.ZEPHYR_BASE_URL || 'https://egnition.atlassian.net',
+      apiUrl: process.env.ZEPHYR_API_URL || 'https://api.zephyrscale.smartbear.com/v2',
+      apiToken: process.env.ZEPHYR_API_TOKEN || '',
+    },
+    openrouter: {
+      apiKey: process.env.OPENROUTER_API_KEY || '',
+      model: process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp',
+    },
+    slack: {
+      botToken: process.env.SLACK_BOT_TOKEN || '',
+      channelId: process.env.SLACK_CHANNEL_ID || '',
+    },
+  });
+});
+
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',

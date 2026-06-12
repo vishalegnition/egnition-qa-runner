@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Egnition QA Runner</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px;
+      background: #f5f6f8;
+      color: #1a1a1a;
+    }
+    h1 { margin: 0 0 20px; font-size: 1.5rem; }
+    .panel {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: end;
+    }
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
+    select, input[type="text"] {
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 1rem;
+      min-width: 200px;
+    }
+    #cycleId { flex: 1; min-width: 180px; }
+    button {
+      padding: 10px 20px;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    #log {
+      font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      height: 320px;
+      overflow-y: auto;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 14px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+    }
+    .log-pass { color: #4ade80; }
+    .log-fail { color: #f87171; }
+    .log-error { color: #f87171; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }
+    th { font-size: 0.75rem; text-transform: uppercase; color: #64748b; }
+    .rate-good { color: #16a34a; font-weight: 600; }
+    .rate-mid { color: #d97706; font-weight: 600; }
+    .rate-bad { color: #dc2626; font-weight: 600; }
+    #status { font-size: 0.9rem; color: #64748b; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Egnition QA Runner</h1>
+
+  <div class="panel">
+    <div class="row">
+      <div>
+        <label for="app">App</label>
+        <select id="app"></select>
+      </div>
+      <div style="flex:1">
+        <label for="cycleId">Cycle ID</label>
+        <input type="text" id="cycleId" placeholder="e.g. BR-R104" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="runBtn" type="button">Run ▶</button>
+      </div>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="panel">
+    <strong>Live Log</strong>
+    <div id="log"></div>
+  </div>
+
+  <div class="panel">
+    <strong>Past Runs</strong>
+    <table>
+      <thead>
+        <tr>
+          <th>App</th>
+          <th>Cycle</th>
+          <th>Pass rate</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const appSelect = document.getElementById('app');
+    const cycleInput = document.getElementById('cycleId');
+    const runBtn = document.getElementById('runBtn');
+    const logEl = document.getElementById('log');
+    const historyBody = document.getElementById('historyBody');
+    const statusEl = document.getElementById('status');
+
+    let running = false;
+    let eventSource = null;
+
+    function logLine(text, cls = '') {
+      const line = document.createElement('div');
+      if (cls) line.className = cls;
+      else if (text.startsWith('✅')) line.className = 'log-pass';
+      else if (text.startsWith('❌')) line.className = 'log-fail';
+      line.textContent = text;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function rateClass(rate) {
+      const n = parseInt(rate, 10);
+      if (n >= 80) return 'rate-good';
+      if (n >= 60) return 'rate-mid';
+      return 'rate-bad';
+    }
+
+    function formatDate(iso) {
+      try {
+        return new Date(iso).toLocaleString();
+      } catch {
+        return iso;
+      }
+    }
+
+    async function loadApps() {
+      const res = await fetch('/apps');
+      const apps = await res.json();
+      appSelect.innerHTML = apps.map((a) =>
+        `<option value="${a.id}">${a.name}</option>`
+      ).join('');
+    }
+
+    async function loadHistory() {
+      const res = await fetch('/history');
+      const rows = await res.json();
+      if (!rows.length) {
+        historyBody.innerHTML = '<tr><td colspan="4">No runs yet</td></tr>';
+        return;
+      }
+      historyBody.innerHTML = rows.map((r) =>
+        `<tr>
+          <td>${r.app}</td>
+          <td>${r.cycleId}</td>
+          <td class="${rateClass(r.passRate)}">${r.passRate}</td>
+          <td>${formatDate(r.date)}</td>
+        </tr>`
+      ).join('');
+    }
+
+    function setRunning(on) {
+      running = on;
+      runBtn.disabled = on;
+      runBtn.textContent = on ? 'Running... ⏳' : 'Run ▶';
+      statusEl.textContent = on ? 'Test run in progress…' : '';
+    }
+
+    async function startRun() {
+      if (running) {
+        statusEl.textContent = 'A run is already in progress';
+        return;
+      }
+
+      const app = appSelect.value;
+      const cycleId = cycleInput.value.trim();
+      if (!app || !cycleId) {
+        statusEl.textContent = 'Select an app and enter a cycle ID';
+        return;
+      }
+
+      logEl.innerHTML = '';
+      setRunning(true);
+
+      try {
+        const res = await fetch('/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app, cycleId }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          logLine(data.error || 'Failed to start run', 'log-error');
+          setRunning(false);
+          return;
+        }
+
+        if (eventSource) eventSource.close();
+        eventSource = new EventSource(`/stream/${data.runId}`);
+
+        eventSource.onmessage = (ev) => {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'log') {
+            logLine(msg.message);
+          } else if (msg.type === 'complete') {
+            const s = msg.summary;
+            logLine(`Run complete: ${s.passed}/${s.total} passed (${s.passRate})`, 'log-pass');
+            setRunning(false);
+            loadHistory();
+            eventSource.close();
+          } else if (msg.type === 'error') {
+            logLine(msg.message, 'log-error');
+            setRunning(false);
+            eventSource.close();
+          }
+        };
+
+        eventSource.onerror = () => {
+          if (running) {
+            logLine('Stream connection lost', 'log-error');
+            setRunning(false);
+          }
+        };
+      } catch (err) {
+        logLine(err.message, 'log-error');
+        setRunning(false);
+      }
+    }
+
+    runBtn.addEventListener('click', startRun);
+    cycleInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') startRun();
+    });
+
+    loadApps();
+    loadHistory();
+    cycleInput.focus();
+  </script>
+</body>
+</html>
