@@ -168,7 +168,7 @@ app.post('/internal/run-test', express.json(), (req, res) => {
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    version: 'bs-login-first',
+    version: 'no-cookies-bs',
     runner: useGitHubActions() ? 'github-actions' : 'railway',
     browser: 'browserstack',
     has_browserstack: Boolean(

@@ -10,7 +10,6 @@ const RUNNER_ENV_KEYS = [
   'BROWSERSTACK_USERNAME',
   'BROWSERSTACK_ACCESS_KEY',
   'SMOKE_TEST',
-  'SHOPIFY_SESSION_COOKIES',
   'CAPSOLVER_API_KEY',
   'CAPSOLVER_PROXY',
   'SHOPIFY_ADMIN_EMAIL',
@@ -35,6 +34,9 @@ function buildRunnerEnv({ app, cycleId, slackChannel }) {
   }
   if (slackChannel) env.SLACK_CHANNEL_ID = slackChannel;
   if (!env.SMOKE_TEST) env.SMOKE_TEST = 'true';
+  // Never pass cookies to BrowserStack runs (IP-bound; GitHub/Railway secrets linger in process.env)
+  delete env.SHOPIFY_SESSION_COOKIES;
+  if (!env.SHOPIFY_AUTH_MODE) env.SHOPIFY_AUTH_MODE = 'login';
 
   return env;
 }
@@ -49,7 +51,7 @@ export function runCycleOnRailway({ app, cycleId, slackChannel }) {
   console.log(`Starting Railway test run (BrowserStack): ${app} / ${cycleId}`);
   console.log(
     `Runner env: browserstack=${Boolean(env.BROWSERSTACK_USERNAME?.trim() && env.BROWSERSTACK_ACCESS_KEY?.trim())} ` +
-      `cookies=${Boolean(env.SHOPIFY_SESSION_COOKIES?.trim())} ` +
+      `auth=${env.SHOPIFY_AUTH_MODE} ` +
       `capsolver=${Boolean(env.CAPSOLVER_API_KEY?.trim())} ` +
       `capsolver_proxy=${Boolean(env.CAPSOLVER_PROXY?.trim())}`
   );

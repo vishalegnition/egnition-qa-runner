@@ -362,26 +362,36 @@ function hasShopifyCredentials() {
   );
 }
 
-function resolveShopifyAuthMode() {
+export function resolveShopifyAuthMode() {
   const mode = process.env.SHOPIFY_AUTH_MODE?.trim().toLowerCase();
   if (mode === 'login' || mode === 'cookies') return mode;
-  // Cookies are IP-bound — they fail on BrowserStack / CapSolver proxy mismatch
-  if (usesBrowserStack() && hasShopifyCredentials()) return 'login';
+  // Never use cookies on BrowserStack — IP-bound cf_clearance always fails
+  if (usesBrowserStack()) return hasShopifyCredentials() ? 'login' : 'cookies';
   if (process.env.SHOPIFY_SESSION_COOKIES?.trim()) return 'cookies';
   return 'login';
 }
 
-export function buildCloudflareBlockedMessage() {
+export function buildCloudflareBlockedMessage(authMode) {
+  const mode = authMode ?? resolveShopifyAuthMode();
   const onBs = usesBrowserStack();
   let msg = 'Cloudflare blocked Shopify admin access.\n\n';
 
+  if (onBs && mode === 'login') {
+    msg +=
+      `Auth mode: email/password login (no cookies).\n\n` +
+      'BrowserStack IP may still be challenged by Cloudflare. Check the session video in BrowserStack Automate.\n\n' +
+      'Fix:\n' +
+      '1. Confirm SHOPIFY_ADMIN_EMAIL, SHOPIFY_ADMIN_PASSWORD, SHOPIFY_2FA_SECRET on Railway\n' +
+      '2. Watch the BrowserStack session — complete any manual challenge if shown\n' +
+      '3. Contact BrowserStack support about Cloudflare on Shopify admin if it persists\n';
+    return msg;
+  }
+
   if (onBs) {
     msg +=
-      'On BrowserStack, cookies exported from your laptop usually fail (cf_clearance is tied to your IP).\n\n' +
-      'Fix:\n' +
-      '1. Remove SHOPIFY_SESSION_COOKIES from Railway\n' +
-      '2. Set SHOPIFY_ADMIN_EMAIL + SHOPIFY_ADMIN_PASSWORD (+ SHOPIFY_2FA_SECRET if needed)\n' +
-      '3. Re-run — BrowserStack real Chrome should pass login\n';
+      `Auth mode: ${mode}.\n\n` +
+      'Cookies do not work on BrowserStack (cf_clearance is tied to your laptop IP).\n\n' +
+      'Fix: remove SHOPIFY_SESSION_COOKIES everywhere and use SHOPIFY_ADMIN_EMAIL/PASSWORD instead.\n';
     return msg;
   }
 
@@ -422,7 +432,7 @@ async function tryBypassCloudflare(page) {
   return solved;
 }
 
-async function waitForCloudflareAutoPass(page, maxMs = 45000) {
+async function waitForCloudflareAutoPass(page, maxMs = 60000) {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
     if (!(await isCloudflarePage(page))) return true;
@@ -445,7 +455,7 @@ async function ensurePastCloudflare(page) {
   }
 
   if (await isCloudflarePage(page)) {
-    throw new Error(buildCloudflareBlockedMessage());
+    throw new Error(buildCloudflareBlockedMessage(resolveShopifyAuthMode()));
   }
 }
 
@@ -602,15 +612,6 @@ async function openShopifyAdminWithCookies(context, page, appConfig) {
 export async function loginToShopify(page, appConfig) {
   const adminUrl = storeAdminUrl(appConfig.store_url);
   const legacyUrl = storeAdminUrlLegacy(appConfig.store_url);
-  await safeGoto(page, adminUrl, { fallbacks: [legacyUrl] });
-  await page.waitForTimeout(2000);
-
-  if (await isAdminReady(page)) {
-    console.log('Shopify admin already loaded');
-    return;
-  }
-
-  await ensurePastCloudflare(page);
 
   const email = process.env.SHOPIFY_ADMIN_EMAIL?.trim();
   const password = process.env.SHOPIFY_ADMIN_PASSWORD?.trim();
@@ -618,7 +619,8 @@ export async function loginToShopify(page, appConfig) {
     throw new Error('SHOPIFY_ADMIN_EMAIL and SHOPIFY_ADMIN_PASSWORD are required');
   }
 
-  console.log('Logging into Shopify…');
+  // Go straight to accounts login — avoid hitting admin URL (triggers Cloudflare on cold IP)
+  console.log('Logging into Shopify via accounts.shopify.com…');
   await loginWithCredentials(page, email, password);
 
   await safeGoto(page, adminUrl, { fallbacks: [legacyUrl] });
@@ -679,7 +681,7 @@ export async function closeBrowser(handle) {
 
 export async function getSessionBlockReason(page, appConfig) {
   if (await isCloudflarePage(page)) {
-    return buildCloudflareBlockedMessage();
+    return buildCloudflareBlockedMessage(resolveShopifyAuthMode());
   }
   const url = page.url();
   if (isSessionExpired(url) || !(await isAdminReady(page))) {
