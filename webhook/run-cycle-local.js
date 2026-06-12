@@ -7,10 +7,9 @@ const repoRoot = path.join(__dirname, '..');
 
 /** Env vars the runner child process must receive explicitly. */
 const RUNNER_ENV_KEYS = [
-  'STEEL_API_KEY',
-  'STEEL_USE_PROXY',
-  'STEEL_SOLVE_CAPTCHA',
-  'STEEL_SESSION_TIMEOUT_MS',
+  'BROWSERSTACK_USERNAME',
+  'BROWSERSTACK_ACCESS_KEY',
+  'SMOKE_TEST',
   'SHOPIFY_SESSION_COOKIES',
   'CAPSOLVER_API_KEY',
   'CAPSOLVER_PROXY',
@@ -46,9 +45,9 @@ export function runCycleOnRailway({ app, cycleId, slackChannel }) {
   const runnerPath = path.join(repoRoot, 'runner', 'index.js');
   const env = buildRunnerEnv({ app, cycleId, slackChannel });
 
-  console.log(`Starting Railway test run (Steel.dev): ${app} / ${cycleId}`);
+  console.log(`Starting Railway test run (BrowserStack): ${app} / ${cycleId}`);
   console.log(
-    `Runner env: steel=${Boolean(env.STEEL_API_KEY?.trim())} ` +
+    `Runner env: browserstack=${Boolean(env.BROWSERSTACK_USERNAME?.trim() && env.BROWSERSTACK_ACCESS_KEY?.trim())} ` +
       `cookies=${Boolean(env.SHOPIFY_SESSION_COOKIES?.trim())} ` +
       `capsolver=${Boolean(env.CAPSOLVER_API_KEY?.trim())} ` +
       `capsolver_proxy=${Boolean(env.CAPSOLVER_PROXY?.trim())}`

@@ -8,8 +8,9 @@ import {
   openShopifyAdmin,
   assertReadyForTests,
   isSessionExpired,
-  isSteelSessionError,
-  buildSteelTimeoutMessage,
+  isRemoteBrowserSessionError,
+  buildBrowserSessionLostMessage,
+  updateBrowserStackStatus,
 } from './browser.js';
 import { runStepLoop } from './actions.js';
 import { ensureAppContext } from './navigation.js';
@@ -82,7 +83,7 @@ async function runTestCase(page, testCase, cycleId, appConfig) {
 }
 
 /**
- * Run a Zephyr test cycle via Steel.dev cloud browser.
+ * Run a Zephyr test cycle via BrowserStack Automate (Playwright CDP).
  */
 export async function runCycle({ appId, cycleId, slackChannel }) {
   const startedAt = new Date();
@@ -96,7 +97,13 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
   ).catch(() => null);
 
   env('ZEPHYR_API_TOKEN');
-  const { testCases } = await fetchCycleWithTestCases(cycleId);
+  const { testCases: allTestCases } = await fetchCycleWithTestCases(cycleId);
+  const isSmoke = process.env.SMOKE_TEST === 'true';
+  const testCases = isSmoke ? allTestCases.slice(0, 1) : allTestCases;
+
+  if (isSmoke) {
+    console.log(`SMOKE_TEST=true — running only first case: ${testCases[0]?.key}`);
+  }
 
   let browserHandle;
   const results = [];
@@ -104,12 +111,12 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
 
   try {
     progressTs = await postRunProgress(
-      `🏃 *${cycleId}* — starting Steel.dev cloud browser…`,
+      `🏃 *${cycleId}* — starting BrowserStack cloud browser…`,
       channel,
       progressTs
     ).catch(() => progressTs);
 
-    browserHandle = await createBrowser();
+    browserHandle = await createBrowser({ cycleId });
     const { page, context } = browserHandle;
 
     const authMode = process.env.SHOPIFY_SESSION_COOKIES?.trim() ? 'cookies' : 'login';
@@ -172,10 +179,10 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
           sessionDead = true;
         }
       } catch (err) {
-        if (isSteelSessionError(err)) {
+        if (isRemoteBrowserSessionError(err)) {
           sessionDead = true;
           await postError(
-            buildSteelTimeoutMessage(appConfig, cycleId, results.length, testCases.length),
+            buildBrowserSessionLostMessage(appConfig, cycleId, results.length, testCases.length),
             channel
           );
           results.push({
@@ -190,7 +197,7 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
               key: rest.key,
               name: rest.name,
               passed: false,
-              reason: 'Skipped — Steel.dev session timed out',
+              reason: 'Skipped — BrowserStack session ended',
             });
           }
           break;
@@ -203,7 +210,7 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
           passed: false,
           reason: err.message,
         });
-        if (isSteelSessionError(err)) sessionDead = true;
+        if (isRemoteBrowserSessionError(err)) sessionDead = true;
       }
 
       const passed = results.filter((r) => r.passed).length;
@@ -216,12 +223,21 @@ export async function runCycle({ appId, cycleId, slackChannel }) {
       );
     }
 
+    const allPassed = results.length > 0 && results.every((r) => r.passed);
+    await updateBrowserStackStatus(
+      browserHandle?.sessionId,
+      allPassed,
+      allPassed ? 'All tests passed' : 'One or more tests failed'
+    );
+
     await postRunProgress(buildProgressFinished(cycleId, results), channel, progressTs);
   } catch (err) {
     console.error('Runner error:', err);
-    if (isSteelSessionError(err)) {
+    await updateBrowserStackStatus(browserHandle?.sessionId, false, err.message).catch(() => {});
+
+    if (isRemoteBrowserSessionError(err)) {
       await postError(
-        buildSteelTimeoutMessage(appConfig, cycleId, results.length, testCases.length),
+        buildBrowserSessionLostMessage(appConfig, cycleId, results.length, testCases.length),
         channel
       );
     } else {

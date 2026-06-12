@@ -74,7 +74,7 @@ async function triggerGitHubWorkflow({ app, cycleId }) {
     },
     body: JSON.stringify({
       ref: 'main',
-      inputs: { app, cycle_id: cycleId },
+      inputs: { app, cycle_id: cycleId, smoke_test: true },
     }),
   });
 
@@ -168,10 +168,12 @@ app.post('/internal/run-test', express.json(), (req, res) => {
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    version: 'no-steel-proxy',
+    version: 'browserstack',
     runner: useGitHubActions() ? 'github-actions' : 'railway',
-    browser: 'steel.dev',
-    has_steel: Boolean(process.env.STEEL_API_KEY?.trim()),
+    browser: 'browserstack',
+    has_browserstack: Boolean(
+      process.env.BROWSERSTACK_USERNAME?.trim() && process.env.BROWSERSTACK_ACCESS_KEY?.trim()
+    ),
     has_cookies: Boolean(process.env.SHOPIFY_SESSION_COOKIES?.trim()),
     has_capsolver: Boolean(process.env.CAPSOLVER_API_KEY?.trim()),
     has_proxy: Boolean(process.env.CAPSOLVER_PROXY?.trim()),
@@ -180,9 +182,9 @@ app.get('/health', (_req, res) => {
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Webhook + Steel.dev QA runner on port ${port}`);
+  console.log(`Webhook + BrowserStack QA runner on port ${port}`);
   console.log(
-    `Env check: steel=${Boolean(process.env.STEEL_API_KEY?.trim())} ` +
+    `Env check: browserstack=${Boolean(process.env.BROWSERSTACK_USERNAME?.trim() && process.env.BROWSERSTACK_ACCESS_KEY?.trim())} ` +
       `shopify_login=${Boolean(process.env.SHOPIFY_ADMIN_EMAIL?.trim())}`
   );
 });

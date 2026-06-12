@@ -1,10 +1,93 @@
-import Steel from 'steel-sdk';
-import { chromium } from 'playwright';
+import https from 'node:https';
+import { chromium } from 'playwright-core';
 import { generate as generateTotp } from 'otplib';
 import { solveTurnstileOnPage, solveCloudflareChallenge } from './capsolver.js';
 
-/** Hobby plan max = 15 min. Starter+ can set higher via env. */
-const STEEL_SESSION_TIMEOUT_MS = Number(process.env.STEEL_SESSION_TIMEOUT_MS) || 900_000;
+function browserStackCredentials() {
+  const username = process.env.BROWSERSTACK_USERNAME?.trim();
+  const accessKey = process.env.BROWSERSTACK_ACCESS_KEY?.trim();
+  if (!username || !accessKey) {
+    throw new Error(
+      'BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY are required — get them from browserstack.com/accounts/settings'
+    );
+  }
+  return { username, accessKey };
+}
+
+function browserStackCaps({ cycleId } = {}) {
+  const { username, accessKey } = browserStackCredentials();
+  const build = cycleId
+    ? `QA-${cycleId}-${new Date().toISOString().split('T')[0]}`
+    : `QA-Run-${new Date().toISOString().split('T')[0]}`;
+
+  return {
+    browser: 'chrome',
+    browser_version: 'latest',
+    os: 'Windows',
+    os_version: '11',
+    name: cycleId ? `Shopify QA ${cycleId}` : 'Shopify QA Regression',
+    build,
+    'browserstack.username': username,
+    'browserstack.accessKey': accessKey,
+    'browserstack.networkLogs': true,
+    'browserstack.consoleLogs': 'info',
+  };
+}
+
+function browserStackCdpUrl(caps) {
+  return `wss://cdp.browserstack.com/playwright?caps=${encodeURIComponent(JSON.stringify(caps))}`;
+}
+
+function extractBrowserStackSessionId(browser) {
+  try {
+    const url =
+      browser?._connection?._url ??
+      browser?._connection?._transport?._wsURL ??
+      browser?._connection?._transport?._ws?._url ??
+      '';
+    const match = String(url).match(/session\/([^/?]+)/i);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Report overall pass/fail to BrowserStack Automate dashboard. */
+export function updateBrowserStackStatus(sessionId, passed, reason) {
+  return new Promise((resolve) => {
+    if (!sessionId) return resolve();
+
+    let username;
+    let accessKey;
+    try {
+      ({ username, accessKey } = browserStackCredentials());
+    } catch {
+      return resolve();
+    }
+
+    const body = JSON.stringify({
+      status: passed ? 'passed' : 'failed',
+      reason: reason ?? (passed ? 'All tests passed' : 'One or more tests failed'),
+    });
+
+    const req = https.request(
+      {
+        hostname: 'api.browserstack.com',
+        path: `/automate/sessions/${sessionId}.json`,
+        method: 'PUT',
+        auth: `${username}:${accessKey}`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      () => resolve()
+    );
+    req.on('error', () => resolve());
+    req.write(body);
+    req.end();
+  });
+}
 
 function storeHandleFromUrl(storeUrl) {
   const url = storeUrl.replace(/\/$/, '');
@@ -165,20 +248,26 @@ export function isSessionExpired(url) {
   return /\/login|\/account\/login|accounts\.shopify\.com\/lookup|no_cookie_session/i.test(url);
 }
 
-export function isSteelSessionError(err) {
+export function isRemoteBrowserSessionError(err) {
   const msg = String(err?.message ?? err).toLowerCase();
-  return /session.*timed?\s*out|session.*released|websocket.*closed|target.*closed|browser.*closed|cdp.*disconnect|connection.*closed|protocol error|session expired/i.test(
+  return /session.*timed?\s*out|session.*released|websocket.*closed|target.*closed|browser.*closed|cdp.*disconnect|connection.*closed|protocol error|session expired|browserstack/i.test(
     msg
   );
 }
 
-export function buildSteelTimeoutMessage(appConfig, cycleId, completed, total) {
+/** @deprecated Use isRemoteBrowserSessionError */
+export const isSteelSessionError = isRemoteBrowserSessionError;
+
+export function buildBrowserSessionLostMessage(appConfig, cycleId, completed, total) {
   return (
-    `⚠️ Steel.dev session ended during *${appConfig.name}* — Cycle *${cycleId}*.\n` +
+    `⚠️ BrowserStack session ended during *${appConfig.name}* — Cycle *${cycleId}*.\n` +
     `Completed ${completed} of ${total} test cases.\n` +
-    `Hobby plan sessions last max 15 minutes. If login was slow, set SHOPIFY_SESSION_COOKIES to skip login, or upgrade Steel for longer sessions + proxy/captcha.`
+    `Check the session in BrowserStack Automate dashboard for details.`
   );
 }
+
+/** @deprecated Use buildBrowserSessionLostMessage */
+export const buildSteelTimeoutMessage = buildBrowserSessionLostMessage;
 
 export function buildLoginFailedMessage() {
   return (
@@ -196,7 +285,7 @@ export function buildCloudflareBlockedMessage() {
   } else if (!hasProxy) {
     msg += '2. Set CAPSOLVER_PROXY (SOAX/residential) for full Cloudflare interstitial bypass';
   } else {
-    msg += '2. CapSolver could not solve — try fresh cookies or upgrade Steel (STEEL_SOLVE_CAPTCHA=true)';
+    msg += '2. CapSolver could not solve — try fresh SHOPIFY_SESSION_COOKIES';
   }
   return msg;
 }
@@ -335,38 +424,26 @@ async function loginWithCredentials(page, email, password) {
     .catch(() => {});
 }
 
-export async function createBrowser() {
-  const apiKey = process.env.STEEL_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error('STEEL_API_KEY is required — get one from https://steel.dev');
-  }
-
-  const steel = new Steel({ steelAPIKey: apiKey });
-  const useProxy = process.env.STEEL_USE_PROXY === 'true';
-  const solveCaptcha = process.env.STEEL_SOLVE_CAPTCHA === 'true';
-
+export async function createBrowser(options = {}) {
+  const caps = browserStackCaps(options);
   console.log(
-    `Creating Steel.dev session (timeout=${STEEL_SESSION_TIMEOUT_MS}ms, proxy=${useProxy}, captcha=${solveCaptcha})…`
+    `Connecting to BrowserStack Automate (${caps.os} ${caps.os_version}, ${caps.browser}, build=${caps.build})…`
   );
 
-  const sessionParams = {
-    timeout: STEEL_SESSION_TIMEOUT_MS,
-    dimensions: { width: 1440, height: 900 },
-  };
+  const browser = await chromium.connect(browserStackCdpUrl(caps));
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+  });
+  const page = await context.newPage();
+  const sessionId = extractBrowserStackSessionId(browser);
 
-  if (useProxy) {
-    sessionParams.useProxy = true;
+  if (sessionId) {
+    console.log(`BrowserStack session: ${sessionId}`);
+  } else {
+    console.log('BrowserStack session connected (watch live in Automate → Sessions)');
   }
-  if (solveCaptcha) sessionParams.solveCaptcha = true;
 
-  const session = await steel.sessions.create(sessionParams);
-  console.log(`Steel session ${session.id} — viewer: ${session.sessionViewerUrl}`);
-
-  const browser = await chromium.connectOverCDP(`${session.websocketUrl}&apiKey=${apiKey}`);
-  const context = browser.contexts()[0] ?? (await browser.newContext());
-  const page = context.pages()[0] ?? (await context.newPage());
-
-  return { browser, context, page, session, steel };
+  return { browser, context, page, sessionId };
 }
 
 export const launchBrowser = createBrowser;
@@ -438,16 +515,9 @@ export async function openShopifyAdmin(context, page, appConfig) {
 export async function closeBrowser(handle) {
   if (!handle) return;
 
-  const { browser, steel, session } =
-    handle.browser !== undefined ? handle : { browser: handle, steel: null, session: null };
-
+  const { browser } = handle.browser !== undefined ? handle : { browser: handle };
   if (browser) {
     await browser.close().catch(() => {});
-  }
-  if (steel && session?.id) {
-    await steel.sessions.release(session.id).catch((err) => {
-      console.warn('Steel session release:', err.message);
-    });
   }
 }
 

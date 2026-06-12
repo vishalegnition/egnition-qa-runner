@@ -11,6 +11,11 @@ on:
         description: 'Zephyr test cycle key (e.g. BR-R104 for BestSellers reSort)'
         required: true
         type: string
+      smoke_test:
+        description: 'Run only the first test case (pipeline smoke test)'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   run-tests:
@@ -34,10 +39,9 @@ jobs:
         env:
           APP: ${{ inputs.app }}
           CYCLE_ID: ${{ inputs.cycle_id }}
-          STEEL_API_KEY: ${{ secrets.STEEL_API_KEY }}
-          SHOPIFY_SESSION_COOKIES: ${{ secrets.SHOPIFY_SESSION_COOKIES }}
-          CAPSOLVER_API_KEY: ${{ secrets.CAPSOLVER_API_KEY }}
-          CAPSOLVER_PROXY: ${{ secrets.CAPSOLVER_PROXY }}
+          SMOKE_TEST: ${{ inputs.smoke_test }}
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
           SHOPIFY_ADMIN_EMAIL: ${{ secrets.SHOPIFY_ADMIN_EMAIL }}
           SHOPIFY_ADMIN_PASSWORD: ${{ secrets.SHOPIFY_ADMIN_PASSWORD }}
           SHOPIFY_2FA_SECRET: ${{ secrets.SHOPIFY_2FA_SECRET }}
